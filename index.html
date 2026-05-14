@@ -21,8 +21,26 @@
     --sans: 'DM Sans', system-ui, sans-serif;
     --radius: 14px; --radius-sm: 8px;
   }
-  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
-  body { min-height: 100vh; padding-bottom: env(safe-area-inset-bottom); }
+  /* ── Login screen ── */
+  #login-screen {
+    position: fixed; inset: 0; background: var(--bg); z-index: 500;
+    display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+  }
+  .login-box {
+    width: 100%; max-width: 360px; background: var(--bg2);
+    border: 1px solid var(--border2); border-radius: 20px;
+    padding: 2rem 1.75rem;
+  }
+  .login-logo { font-family: var(--serif); font-size: 26px; font-weight: 700; text-align: center; margin-bottom: .25rem; }
+  .login-logo span { color: var(--gold); }
+  .login-sub { text-align: center; font-size: 13px; color: var(--text3); margin-bottom: 1.75rem; }
+  .login-error { background: #3a1010; border: 1px solid #7a2020; border-radius: var(--radius-sm); padding: 9px 12px; font-size: 13px; color: #f09595; margin-bottom: 1rem; display: none; }
+  .btn-login { width: 100%; background: var(--gold); border: none; border-radius: var(--radius-sm); padding: 13px; color: #1a1200; font-size: 15px; font-weight: 500; font-family: var(--sans); cursor: pointer; margin-top: .5rem; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn-login:active { background: var(--gold-light); }
+  .btn-login:disabled { opacity: .6; cursor: not-allowed; }
+  /* ── Logout btn ── */
+  #logout-btn { background: none; border: 1px solid var(--border2); border-radius: 20px; padding: 6px 13px; font-size: 13px; color: var(--text3); font-family: var(--sans); cursor: pointer; }
+  #logout-btn:active { color: var(--text); border-color: var(--border2); }
 
   header {
     background: var(--bg2); border-bottom: 1px solid var(--border);
@@ -144,9 +162,30 @@
 </head>
 <body>
 
+<!-- Login screen -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">Diario <span>Cultural</span></div>
+    <div class="login-sub">Accede a tu diario personal</div>
+    <div class="login-error" id="login-error"></div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="l-email" placeholder="tu@email.com" autocomplete="email" />
+    </div>
+    <div class="form-group">
+      <label>Contraseña</label>
+      <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" />
+    </div>
+    <button class="btn-login" id="login-btn" onclick="doLogin()">Entrar</button>
+  </div>
+</div>
+
 <header>
   <div class="header-title">Diario <span>Cultural</span></div>
-  <button id="add-btn" onclick="openForm()">＋ Añadir</button>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <button id="add-btn" onclick="openForm()">＋ Añadir</button>
+    <button id="logout-btn" onclick="doLogout()" title="Cerrar sesión">↩</button>
+  </div>
 </header>
 
 <div class="stats-bar" id="stats-bar">
@@ -392,6 +431,48 @@ function renderGrid() {
     </div>`;
   }).join('');
 }
+
+// ── Auth ──
+async function doLogin() {
+  const email = document.getElementById('l-email').value.trim();
+  const pass  = document.getElementById('l-pass').value;
+  const errEl = document.getElementById('login-error');
+  const btn   = document.getElementById('login-btn');
+  if (!email || !pass) { showLoginError('Introduce tu email y contraseña.'); return; }
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Entrando…';
+  const { error } = await db.auth.signInWithPassword({ email, password: pass });
+  btn.disabled = false;
+  btn.textContent = 'Entrar';
+  if (error) { showLoginError('Email o contraseña incorrectos.'); return; }
+  hideLoginScreen();
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+async function doLogout() {
+  await db.auth.signOut();
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('l-pass').value = '';
+  document.getElementById('login-error').style.display = 'none';
+}
+
+function hideLoginScreen() {
+  document.getElementById('login-screen').style.display = 'none';
+}
+
+// Enter key on login form
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') doLogin();
+});
+
+// Check existing session on load
+db.auth.getSession().then(({ data: { session } }) => {
+  if (session) hideLoginScreen();
+});
 
 loadEvents();
 

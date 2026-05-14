@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBA7pJvzaOLhdID8IYgEe_TuSbbNm-3qhg&libraries=places"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -189,8 +190,19 @@
     </div>
     <div class="form-group">
       <label>Lugar / Sala</label>
-      <input type="text" id="f-venue" placeholder="Teatro, cine, sala de conciertos…" />
+      <input type="text" id="f-venue" placeholder="Busca un teatro, cine, sala…" autocomplete="off" />
     </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Ciudad</label>
+        <input type="text" id="f-city" placeholder="Se rellena automáticamente" />
+      </div>
+      <div class="form-group">
+        <label>Dirección</label>
+        <input type="text" id="f-address" placeholder="Se rellena automáticamente" readonly style="color:var(--text3);" />
+      </div>
+    </div>
+    <input type="hidden" id="f-maps-url" />
     <div class="form-group">
       <label>Notas</label>
       <textarea id="f-notes" placeholder="Impresiones, con quién fuiste…"></textarea>
@@ -252,6 +264,9 @@ function openForm(ev = null) {
   document.getElementById('f-date').value = ev ? (ev.date || '') : new Date().toISOString().split('T')[0];
   document.getElementById('f-cat').value = ev ? (ev.cat || 'Concierto') : 'Concierto';
   document.getElementById('f-venue').value = ev ? (ev.venue || '') : '';
+  document.getElementById('f-city').value = ev ? (ev.city || '') : '';
+  document.getElementById('f-address').value = ev ? (ev.address || '') : '';
+  document.getElementById('f-maps-url').value = ev ? (ev.maps_url || '') : '';
   document.getElementById('f-notes').value = ev ? (ev.notes || '') : '';
   formRating = ev ? (ev.rating || 0) : 0;
   renderStars();
@@ -284,6 +299,9 @@ async function saveEvent() {
     date: document.getElementById('f-date').value,
     cat: document.getElementById('f-cat').value,
     venue: document.getElementById('f-venue').value.trim(),
+    city: document.getElementById('f-city').value.trim(),
+    address: document.getElementById('f-address').value.trim(),
+    maps_url: document.getElementById('f-maps-url').value.trim(),
     notes: document.getElementById('f-notes').value.trim(),
     rating: formRating,
   };
@@ -357,10 +375,17 @@ function renderGrid() {
     return `<div class="event-card">
       <div class="card-top">
         <span class="cat-tag ${cat.cls}">${cat.emoji} ${ev.cat}</span>
-        <button class="card-delete" onclick="deleteEvent(${ev.id})">✕</button>
+        <div class="card-actions">
+          <button class="card-edit" onclick='openForm(${JSON.stringify(ev)})' title="Editar">✏️</button>
+          <button class="card-delete" onclick="deleteEvent(${ev.id})" title="Eliminar">✕</button>
+        </div>
       </div>
       <div class="card-title">${ev.title}</div>
-      ${ev.venue?`<div class="card-meta">📍 ${ev.venue}</div>`:''}
+      ${(ev.venue || ev.city) ? `<div class="card-meta">
+        📍 ${[ev.venue, ev.city].filter(Boolean).join(' · ')}
+        ${ev.maps_url ? `<a href="${ev.maps_url}" target="_blank" rel="noopener" style="margin-left:6px; color:var(--gold); font-size:14px; text-decoration:none;" title="Ver en Google Maps">🗺️</a>` : ''}
+      </div>` : ''}
+      ${!ev.venue && ev.city?`<div class="card-meta">📍 ${ev.city}</div>`:''}
       ${ev.date?`<div class="card-meta">📅 ${fmtDate(ev.date)}</div>`:''}
       ${stars?`<div class="card-stars">${stars}</div>`:''}
       ${ev.notes?`<div class="card-notes">${ev.notes}</div>`:''}
@@ -369,6 +394,31 @@ function renderGrid() {
 }
 
 loadEvents();
+
+// Google Places Autocomplete
+function initAutocomplete() {
+  const input = document.getElementById('f-venue');
+  if (!input || !window.google) return;
+  const ac = new google.maps.places.Autocomplete(input, { fields: ['name','formatted_address','url','address_components'] });
+  ac.addListener('place_changed', () => {
+    const place = ac.getPlace();
+    if (!place.name) return;
+    document.getElementById('f-venue').value = place.name;
+    document.getElementById('f-address').value = place.formatted_address || '';
+    document.getElementById('f-maps-url').value = place.url || '';
+    // Extract city from address components
+    const cityComp = (place.address_components || []).find(c =>
+      c.types.includes('locality') || c.types.includes('administrative_area_level_2')
+    );
+    if (cityComp) document.getElementById('f-city').value = cityComp.long_name;
+  });
+}
+
+if (window.google && window.google.maps) {
+  initAutocomplete();
+} else {
+  window.addEventListener('load', initAutocomplete);
+}
 </script>
 </body>
 </html>

@@ -2,7 +2,7 @@
   "name": "Diario Cultural",
   "short_name": "Diario",
   "description": "Tu registro personal de eventos culturales",
-  "start_url": "/DiarioCultural/",
+  "start_url": "https://asierta.github.io/DiarioCultural/",
   "display": "standalone",
   "background_color": "#09080a",
   "theme_color": "#09080a",

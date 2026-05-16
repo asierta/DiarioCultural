@@ -533,6 +533,251 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// ══════════════════════════════════════════════
+// ARTISTAS & CONCIERTOS
+// ══════════════════════════════════════════════
+
+let artists  = JSON.parse(localStorage.getItem('dc_artists') || '[]');
+let userCity = localStorage.getItem('dc_city') || '';
+
+// ── Tab switching ──
+function switchTab(tab) {
+  const diarioEls = ['stats-bar', 'filters', 'view-toggle-bar', 'main-container'];
+  const artistasSection = document.getElementById('artistas-section');
+  const tabDiario   = document.getElementById('tab-diario');
+  const tabArtistas = document.getElementById('tab-artistas');
+  const headerSearch = document.getElementById('header-search');
+  const addBtn = document.getElementById('add-btn');
+
+  if (tab === 'artistas') {
+    diarioEls.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    artistasSection.style.display = 'block';
+    headerSearch.style.display = 'none';
+    addBtn.style.display = 'none';
+    tabDiario.classList.remove('active');
+    tabArtistas.classList.add('active');
+  } else {
+    diarioEls.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.removeProperty('display');
+    });
+    artistasSection.style.display = 'none';
+    headerSearch.style.removeProperty('display');
+    addBtn.style.removeProperty('display');
+    tabDiario.classList.add('active');
+    tabArtistas.classList.remove('active');
+  }
+}
+
+// ── Artists CRUD ──
+function saveArtists() {
+  localStorage.setItem('dc_artists', JSON.stringify(artists));
+}
+
+function addArtist() {
+  const input = document.getElementById('a-artist-input');
+  const name  = input.value.trim();
+  if (!name) return;
+  if (artists.some(a => a.toLowerCase() === name.toLowerCase())) {
+    toast('Ese artista ya está en tu lista', true);
+    return;
+  }
+  artists.push(name);
+  saveArtists();
+  input.value = '';
+  renderArtistChips();
+}
+
+function removeArtist(name) {
+  artists = artists.filter(a => a !== name);
+  saveArtists();
+  renderArtistChips();
+}
+
+function renderArtistChips() {
+  const el = document.getElementById('artist-chips');
+  if (!el) return;
+  if (!artists.length) {
+    el.innerHTML = '<span class="no-artists">Añade tus artistas para empezar…</span>';
+    return;
+  }
+  el.innerHTML = artists.map(a =>
+    `<span class="artist-chip">${escHtml(a)}<button onclick="removeArtist(${JSON.stringify(a)})" title="Eliminar">✕</button></span>`
+  ).join('');
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Concerts search ──
+function normalizeStr(str) {
+  return (str || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+async function fetchConcerts() {
+  const cityInput = document.getElementById('a-city-input');
+  const city = cityInput.value.trim();
+
+  if (!city) {
+    toast('Indica tu ciudad primero', true);
+    cityInput.focus();
+    return;
+  }
+  if (!artists.length) {
+    toast('Añade artistas primero', true);
+    return;
+  }
+
+  // Persist city
+  userCity = city;
+  localStorage.setItem('dc_city', city);
+
+  const btn = document.getElementById('concerts-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Buscando…';
+
+  const resultsEl = document.getElementById('concerts-results');
+  resultsEl.innerHTML = '';
+
+  const normCity = normalizeStr(city);
+
+  // Fetch all artists in parallel
+  const fetches = artists.map(async artist => {
+    try {
+      const url = `https://rest.bandsintown.com/artists/${encodeURIComponent(artist)}/events?app_id=diario_cultural&date=upcoming`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (!Array.isArray(data)) return [];
+      return data
+        .filter(ev => {
+          const evCity = normalizeStr(ev.venue?.city || '');
+          // loose bilateral match: "madrid" matches "comunidad de madrid" etc.
+          return evCity.includes(normCity) || normCity.includes(evCity);
+        })
+        .map(ev => ({ ...ev, _artistName: artist }));
+    } catch {
+      return [];
+    }
+  });
+
+  const settled = await Promise.allSettled(fetches);
+
+  // Flatten, deduplicate by event id, sort by date
+  const seen = new Set();
+  const allEvents = settled
+    .filter(r => r.status === 'fulfilled')
+    .flatMap(r => r.value)
+    .filter(ev => {
+      if (seen.has(ev.id)) return false;
+      seen.add(ev.id);
+      return true;
+    })
+    .sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
+
+  btn.disabled = false;
+  btn.textContent = '🔍 Buscar conciertos';
+
+  renderConcerts(allEvents, city);
+}
+
+function renderConcerts(events, city) {
+  const el = document.getElementById('concerts-results');
+
+  if (!events.length) {
+    el.innerHTML = `<div class="concerts-empty">
+      <div style="font-size:42px;margin-bottom:.85rem">🎵</div>
+      <h3>Sin conciertos próximos</h3>
+      <p>No hemos encontrado eventos en <strong>${escHtml(city)}</strong><br>para los artistas que sigues.</p>
+    </div>`;
+    return;
+  }
+
+  const plural = events.length === 1 ? 'concierto encontrado' : 'conciertos encontrados';
+  const MONTHS = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+
+  const cards = events.map((ev, i) => {
+    const dt     = new Date(ev.datetime);
+    const day    = dt.getDate();
+    const month  = MONTHS[dt.getMonth()];
+    const year   = dt.getFullYear();
+    const hh     = dt.getHours().toString().padStart(2, '0');
+    const mm     = dt.getMinutes().toString().padStart(2, '0');
+    const showTime = dt.getHours() !== 0 || dt.getMinutes() !== 0;
+    const venue  = [ev.venue?.name, ev.venue?.city].filter(Boolean).join(' · ');
+
+    // Serialize concert data for the prefill button
+    const concertData = JSON.stringify({
+      title:    ev._artistName,
+      datetime: ev.datetime,
+      venue:    ev.venue || {},
+      url:      ev.url || '',
+    });
+
+    const extBtn = ev.url
+      ? `<button class="concert-ext-btn" onclick="event.stopPropagation();window.open(${JSON.stringify(ev.url)},'_blank')" title="Ver entradas">🎟</button>`
+      : '';
+
+    return `<div class="concert-card" style="animation-delay:${Math.min(i * .04, .3)}s">
+      <div class="concert-date">
+        <div class="concert-day">${day}</div>
+        <div class="concert-month">${month} ${year}</div>
+      </div>
+      <div class="concert-info">
+        <div class="concert-artist">${escHtml(ev._artistName)}</div>
+        ${venue  ? `<div class="concert-venue">📍 ${escHtml(venue)}</div>` : ''}
+        ${showTime ? `<div class="concert-time">🕐 ${hh}:${mm}</div>` : ''}
+      </div>
+      <div class="concert-actions">
+        <button class="concert-add-btn"
+          onclick="event.stopPropagation();prefillFromConcert(${escHtml(concertData)})"
+          title="Añadir al diario">＋ Diario</button>
+        ${extBtn}
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `<div class="concerts-count">${events.length} ${plural} en ${escHtml(city)}</div>${cards}`;
+}
+
+// ── Pre-fill diary form from a concert ──
+function prefillFromConcert(concertJson) {
+  let concert;
+  try { concert = typeof concertJson === 'string' ? JSON.parse(concertJson) : concertJson; }
+  catch { return; }
+
+  const date = concert.datetime ? concert.datetime.split('T')[0] : new Date().toISOString().split('T')[0];
+
+  // Switch to diary tab first, then open the form
+  switchTab('diario');
+  setTimeout(() => {
+    openForm(); // opens a blank new-event form
+    // Override the fields we know from the concert
+    document.getElementById('sheet-title').textContent = 'Nuevo evento';
+    document.getElementById('f-title').value = concert.title  || '';
+    document.getElementById('f-date').value  = date;
+    document.getElementById('f-cat').value   = 'Concierto';
+    document.getElementById('f-venue').value = concert.venue?.name || '';
+    document.getElementById('f-city').value  = concert.venue?.city || '';
+    // Focus notes so user can add their impression
+    document.getElementById('f-notes').focus();
+  }, 120);
+}
+
+// ── Init artistas section ──
+function initArtistasSection() {
+  const cityInput = document.getElementById('a-city-input');
+  if (cityInput && userCity) cityInput.value = userCity;
+  renderArtistChips();
+}
+
 // ── Init ──
 db.auth.getSession().then(({ data: { session } }) => { if (session) hideLoginScreen(); });
 loadEvents();
+initArtistasSection();

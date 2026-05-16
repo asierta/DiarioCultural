@@ -39,7 +39,7 @@
 <!-- Header -->
 <header>
   <div class="logotype">Diario <em>Cultural</em></div>
-  <div class="search-wrap">
+  <div class="search-wrap" id="header-search">
     <span class="search-icon">🔍</span>
     <input type="text" id="search-input" placeholder="Buscar eventos…" oninput="onSearch(event)" autocomplete="off"/>
     <button class="search-clear" id="search-clear" onclick="clearSearch()">✕</button>
@@ -49,6 +49,12 @@
     <button id="logout-btn" onclick="doLogout()">↩ Salir</button>
   </div>
 </header>
+
+<!-- Tab bar -->
+<div class="tab-bar" id="tab-bar">
+  <button class="tab active" id="tab-diario" onclick="switchTab('diario')">📓 Diario</button>
+  <button class="tab" id="tab-artistas" onclick="switchTab('artistas')">🎵 Artistas</button>
+</div>
 
 <!-- Stats -->
 <div class="stats-bar" id="stats-bar">
@@ -60,17 +66,60 @@
 
 <!-- Filters + Sort -->
 <div class="filter-bar" id="filters"></div>
-<div class="view-toggle-bar">
+<div class="view-toggle-bar" id="view-toggle-bar">
   <button class="view-btn active" id="btn-grid" onclick="setView('grid')" title="Vista cuadrícula">⊞</button>
   <button class="view-btn" id="btn-list" onclick="setView('list')" title="Vista lista">☰</button>
 </div>
 
 <!-- Events -->
-<main>
+<main id="main-container">
   <div class="events-grid" id="events-grid">
     <div class="loading-wrap"><div class="spinner"></div><br><br>Cargando tu diario…</div>
   </div>
 </main>
+
+<!-- Artistas / Conciertos -->
+<section id="artistas-section">
+  <div class="artistas-inner">
+
+    <div class="artistas-header">
+      <h2 class="artistas-title">Mis <em>Artistas</em></h2>
+      <p class="artistas-subtitle">Añade los artistas que sigues y busca sus próximos conciertos en tu ciudad</p>
+    </div>
+
+    <div class="artistas-setup">
+      <!-- Ciudad -->
+      <div class="setup-city">
+        <label>Tu ciudad</label>
+        <div class="city-input-row">
+          <span class="city-icon">📍</span>
+          <input type="text" id="a-city-input" placeholder="Madrid, Barcelona, Valencia…"/>
+        </div>
+      </div>
+
+      <!-- Añadir artista -->
+      <div class="setup-add">
+        <label>Añadir artista</label>
+        <div class="artist-add-row">
+          <input type="text" id="a-artist-input" placeholder="Nombre del artista…" onkeydown="if(event.key==='Enter') addArtist()"/>
+          <button class="btn-add-artist" onclick="addArtist()">＋ Añadir</button>
+        </div>
+      </div>
+
+      <!-- Chips -->
+      <div id="artist-chips" class="artist-chips"></div>
+
+      <!-- Buscar -->
+      <button id="concerts-btn" class="btn-search-concerts" onclick="fetchConcerts()">
+        🔍 Buscar conciertos
+      </button>
+    </div>
+
+    <!-- Resultados -->
+    <div id="concerts-results" class="concerts-results"></div>
+
+  </div>
+</section>
 
 <!-- Add/Edit Sheet -->
 <div class="overlay" id="overlay" onclick="overlayClick(event)">

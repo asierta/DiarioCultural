@@ -565,13 +565,19 @@ if ('serviceWorker' in navigator) {
 let statsYear = 'Todos';
 
 function openStats() {
-  // Populate year selector
+  // Primero abrir el overlay, luego renderizar (así el panel siempre se muestra)
+  document.getElementById('stats-overlay').classList.add('open');
   const sel = document.getElementById('stats-year-sel');
   const years = getYears();
   sel.innerHTML = '<option value="Todos">Todos los años</option>' +
     years.map(y => `<option value="${y}" ${y === statsYear ? 'selected' : ''}>${y}</option>`).join('');
-  renderStatsPanel();
-  document.getElementById('stats-overlay').classList.add('open');
+  try {
+    renderStatsPanel();
+  } catch(err) {
+    document.getElementById('stats-content').innerHTML =
+      `<p style="padding:2rem;text-align:center;color:var(--text3)">Error al cargar estadísticas.<br><small>${err.message}</small></p>`;
+    console.error('renderStatsPanel error:', err);
+  }
 }
 
 function closeStats() {

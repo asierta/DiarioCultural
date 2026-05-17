@@ -10,7 +10,7 @@ const CATS = {
   'Otro':       { emoji: '✨', color: 'var(--c-otro)'    },
 };
 
-let events = [], filterCat = 'Todos', filterYear = 'Todos', sortBy = 'recent';
+let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = '', sortBy = 'recent';
 let searchQuery = '', formRating = 0, saving = false, editingId = null;
 let viewMode = localStorage.getItem('viewMode') || 'grid';
 let pendingImageFile = null, existingImageUrl = null, removeExistingImage = false;
@@ -42,6 +42,15 @@ function highlight(text, query) {
   if (!query || !text) return text || '';
   const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark class="highlight">$1</mark>');
+}
+
+function escHtml(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getCompanions(ev) {
+  if (!ev.companions) return [];
+  return ev.companions.split(',').map(c => c.trim()).filter(Boolean);
 }
 
 // ── Auth ──
@@ -290,6 +299,7 @@ function openForm(ev = null) {
   document.getElementById('f-address').value  = ev?.address || '';
   document.getElementById('f-maps-url').value = ev?.maps_url|| '';
   document.getElementById('f-notes').value    = ev?.notes   || '';
+  document.getElementById('f-companions').value = ev?.companions || '';
   document.getElementById('f-image').value    = '';
   setProgress(0);
 
@@ -364,6 +374,7 @@ async function saveEvent() {
     address:        document.getElementById('f-address').value.trim(),
     maps_url:       document.getElementById('f-maps-url').value.trim(),
     notes:          document.getElementById('f-notes').value.trim(),
+    companions:     document.getElementById('f-companions').value.trim(),
     rating:         formRating,
     image_url:      imageUrl,
     image_position: imagePosition,
@@ -398,9 +409,16 @@ async function deleteEvent(id) {
 }
 
 // ── Filters ──
-function setFilter(c) { filterCat = c; render(); }
-function setYear(y)   { filterYear = y; render(); }
-function getYears()   { return [...new Set(events.map(e => e.date?.slice(0,4)).filter(Boolean))].sort((a,b) => b-a); }
+function setFilter(c)           { filterCat = c; render(); }
+function setYear(y)             { filterYear = y; render(); }
+function setCompanionFilter(c)  { filterCompanion = filterCompanion === c ? '' : c; render(); }
+function getYears()             { return [...new Set(events.map(e => e.date?.slice(0,4)).filter(Boolean))].sort((a,b) => b-a); }
+
+function getTopCompanions(limit = 6) {
+  const map = {};
+  events.forEach(e => getCompanions(e).forEach(c => { map[c] = (map[c] || 0) + 1; }));
+  return Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, limit).map(([c]) => c);
+}
 
 // ── Render ──
 function render() { renderStats(); renderFilters(); renderGrid(); }
@@ -439,7 +457,12 @@ function renderFilters() {
       <option value="rating"  ${sortBy==='rating' ?'selected':''}>★ Valoración</option>
       <option value="title"   ${sortBy==='title'  ?'selected':''}>A→Z Título</option>
     </select>`;
-  document.getElementById('filters').innerHTML = catPills + yearPills + sortControl;
+  const companionPills = getTopCompanions().length
+    ? '<div class="filter-divider"></div>' + getTopCompanions().map(c =>
+        `<button class="pill${filterCompanion===c?' active':''}" onclick="setCompanionFilter(${JSON.stringify(c)})">👥 ${escHtml(c)}</button>`
+      ).join('')
+    : '';
+  document.getElementById('filters').innerHTML = catPills + yearPills + companionPills + sortControl;
 }
 
 function renderGrid() {
@@ -450,13 +473,17 @@ function renderGrid() {
   let list = events;
   if (filterCat  !== 'Todos') list = list.filter(e => e.cat === filterCat);
   if (filterYear !== 'Todos') list = list.filter(e => e.date?.startsWith(filterYear));
+  if (filterCompanion) {
+    list = list.filter(e => getCompanions(e).includes(filterCompanion));
+  }
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     list = list.filter(e =>
       e.title?.toLowerCase().includes(q) ||
       e.venue?.toLowerCase().includes(q) ||
       e.city?.toLowerCase().includes(q)  ||
-      e.notes?.toLowerCase().includes(q)
+      e.notes?.toLowerCase().includes(q) ||
+      e.companions?.toLowerCase().includes(q)
     );
   }
   list = sortedEvents(list);
@@ -500,6 +527,7 @@ function renderGrid() {
         ${loc ? `<div class="card-meta">📍 ${highlight(loc, q)}${ev.maps_url ? ` <a href="${ev.maps_url}" target="_blank" rel="noopener">🗺</a>` : ''}</div>` : ''}
         ${ev.date ? `<div class="card-meta">📅 ${fmtDate(ev.date)}</div>` : ''}
         ${stars ? `<div class="card-stars">${stars}</div>` : ''}
+        ${ev.companions ? `<div class="card-companions">${getCompanions(ev).map(c=>`<span class="companion-tag" onclick="event.stopPropagation();setCompanionFilter(${JSON.stringify(c)})">${escHtml(c)}</span>`).join('')}</div>` : ''}
         ${ev.notes ? `<div class="card-notes">${highlight(ev.notes, q)}</div>` : ''}
       </div>
     </div>`;
@@ -533,251 +561,152 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// ══════════════════════════════════════════════
-// ARTISTAS & CONCIERTOS
-// ══════════════════════════════════════════════
+// ── Estadísticas detalladas ──
+let statsYear = 'Todos';
 
-let artists  = JSON.parse(localStorage.getItem('dc_artists') || '[]');
-let userCity = localStorage.getItem('dc_city') || '';
-
-// ── Tab switching ──
-function switchTab(tab) {
-  const diarioEls = ['stats-bar', 'filters', 'view-toggle-bar', 'main-container'];
-  const artistasSection = document.getElementById('artistas-section');
-  const tabDiario   = document.getElementById('tab-diario');
-  const tabArtistas = document.getElementById('tab-artistas');
-  const headerSearch = document.getElementById('header-search');
-  const addBtn = document.getElementById('add-btn');
-
-  if (tab === 'artistas') {
-    diarioEls.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = 'none';
-    });
-    artistasSection.style.display = 'block';
-    headerSearch.style.display = 'none';
-    addBtn.style.display = 'none';
-    tabDiario.classList.remove('active');
-    tabArtistas.classList.add('active');
-  } else {
-    diarioEls.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.style.removeProperty('display');
-    });
-    artistasSection.style.display = 'none';
-    headerSearch.style.removeProperty('display');
-    addBtn.style.removeProperty('display');
-    tabDiario.classList.add('active');
-    tabArtistas.classList.remove('active');
-  }
+function openStats() {
+  // Populate year selector
+  const sel = document.getElementById('stats-year-sel');
+  const years = getYears();
+  sel.innerHTML = '<option value="Todos">Todos los años</option>' +
+    years.map(y => `<option value="${y}" ${y === statsYear ? 'selected' : ''}>${y}</option>`).join('');
+  renderStatsPanel();
+  document.getElementById('stats-overlay').classList.add('open');
 }
 
-// ── Artists CRUD ──
-function saveArtists() {
-  localStorage.setItem('dc_artists', JSON.stringify(artists));
+function closeStats() {
+  document.getElementById('stats-overlay').classList.remove('open');
 }
 
-function addArtist() {
-  const input = document.getElementById('a-artist-input');
-  const name  = input.value.trim();
-  if (!name) return;
-  if (artists.some(a => a.toLowerCase() === name.toLowerCase())) {
-    toast('Ese artista ya está en tu lista', true);
-    return;
-  }
-  artists.push(name);
-  saveArtists();
-  input.value = '';
-  renderArtistChips();
+function statsOverlayClick(e) {
+  if (e.target === document.getElementById('stats-overlay')) closeStats();
 }
 
-function removeArtist(name) {
-  artists = artists.filter(a => a !== name);
-  saveArtists();
-  renderArtistChips();
+function setStatsYear(y) {
+  statsYear = y;
+  renderStatsPanel();
 }
 
-function renderArtistChips() {
-  const el = document.getElementById('artist-chips');
-  if (!el) return;
-  if (!artists.length) {
-    el.innerHTML = '<span class="no-artists">Añade tus artistas para empezar…</span>';
-    return;
-  }
-  el.innerHTML = artists.map(a =>
-    `<span class="artist-chip">${escHtml(a)}<button onclick="removeArtist(${JSON.stringify(a)})" title="Eliminar">✕</button></span>`
-  ).join('');
-}
+function renderStatsPanel() {
+  const content = document.getElementById('stats-content');
+  const evts = statsYear === 'Todos' ? events : events.filter(e => e.date?.startsWith(statsYear));
 
-function escHtml(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// ── Concerts search ──
-function normalizeStr(str) {
-  return (str || '').toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .trim();
-}
-
-async function fetchConcerts() {
-  const cityInput = document.getElementById('a-city-input');
-  const city = cityInput.value.trim();
-
-  if (!city) {
-    toast('Indica tu ciudad primero', true);
-    cityInput.focus();
-    return;
-  }
-  if (!artists.length) {
-    toast('Añade artistas primero', true);
-    return;
-  }
-
-  // Persist city
-  userCity = city;
-  localStorage.setItem('dc_city', city);
-
-  const btn = document.getElementById('concerts-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<div class="spinner"></div> Buscando…';
-
-  const resultsEl = document.getElementById('concerts-results');
-  resultsEl.innerHTML = '';
-
-  const normCity = normalizeStr(city);
-
-  // Fetch all artists in parallel
-  const fetches = artists.map(async artist => {
-    try {
-      const url = `https://rest.bandsintown.com/artists/${encodeURIComponent(artist)}/events?app_id=diario_cultural&date=upcoming`;
-      const res = await fetch(url);
-      if (!res.ok) return [];
-      const data = await res.json();
-      if (!Array.isArray(data)) return [];
-      return data
-        .filter(ev => {
-          const evCity = normalizeStr(ev.venue?.city || '');
-          // loose bilateral match: "madrid" matches "comunidad de madrid" etc.
-          return evCity.includes(normCity) || normCity.includes(evCity);
-        })
-        .map(ev => ({ ...ev, _artistName: artist }));
-    } catch {
-      return [];
-    }
-  });
-
-  const settled = await Promise.allSettled(fetches);
-
-  // Flatten, deduplicate by event id, sort by date
-  const seen = new Set();
-  const allEvents = settled
-    .filter(r => r.status === 'fulfilled')
-    .flatMap(r => r.value)
-    .filter(ev => {
-      if (seen.has(ev.id)) return false;
-      seen.add(ev.id);
-      return true;
-    })
-    .sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
-
-  btn.disabled = false;
-  btn.textContent = '🔍 Buscar conciertos';
-
-  renderConcerts(allEvents, city);
-}
-
-function renderConcerts(events, city) {
-  const el = document.getElementById('concerts-results');
-
-  if (!events.length) {
-    el.innerHTML = `<div class="concerts-empty">
-      <div style="font-size:42px;margin-bottom:.85rem">🎵</div>
-      <h3>Sin conciertos próximos</h3>
-      <p>No hemos encontrado eventos en <strong>${escHtml(city)}</strong><br>para los artistas que sigues.</p>
+  if (!evts.length) {
+    content.innerHTML = `<div style="text-align:center;padding:3rem 1rem;color:var(--text3)">
+      <div style="font-size:36px;margin-bottom:.75rem">📊</div>
+      <p>No hay eventos${statsYear !== 'Todos' ? ' en ' + statsYear : ''}.<br>Añade eventos para ver estadísticas.</p>
     </div>`;
     return;
   }
 
-  const plural = events.length === 1 ? 'concierto encontrado' : 'conciertos encontrados';
-  const MONTHS = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  // ── Cálculos ──
+  const rated    = evts.filter(e => e.rating > 0);
+  const avgRat   = rated.length ? (rated.reduce((s,e) => s+e.rating, 0) / rated.length).toFixed(1) : '—';
+  const compSet  = new Set(evts.flatMap(e => getCompanions(e)));
 
-  const cards = events.map((ev, i) => {
-    const dt     = new Date(ev.datetime);
-    const day    = dt.getDate();
-    const month  = MONTHS[dt.getMonth()];
-    const year   = dt.getFullYear();
-    const hh     = dt.getHours().toString().padStart(2, '0');
-    const mm     = dt.getMinutes().toString().padStart(2, '0');
-    const showTime = dt.getHours() !== 0 || dt.getMinutes() !== 0;
-    const venue  = [ev.venue?.name, ev.venue?.city].filter(Boolean).join(' · ');
+  // Actividad mensual
+  const MONTHS_S = ['E','F','M','A','M','J','J','A','S','O','N','D'];
+  const monthly  = MONTHS_S.map((m, i) => ({ m, v: evts.filter(e => e.date && parseInt(e.date.split('-')[1])-1 === i).length }));
+  const maxMonth = Math.max(...monthly.map(d => d.v), 1);
 
-    // Serialize concert data for the prefill button
-    const concertData = JSON.stringify({
-      title:    ev._artistName,
-      datetime: ev.datetime,
-      venue:    ev.venue || {},
-      url:      ev.url || '',
-    });
+  // Categorías
+  const cats = Object.entries(CATS).map(([c, meta]) => ({
+    label: meta.emoji + ' ' + c, color: meta.color, v: evts.filter(e => e.cat === c).length
+  })).filter(d => d.v > 0).sort((a,b) => b.v - a.v);
+  const maxCat = cats[0]?.v || 1;
 
-    const extBtn = ev.url
-      ? `<button class="concert-ext-btn" onclick="event.stopPropagation();window.open(${JSON.stringify(ev.url)},'_blank')" title="Ver entradas">🎟</button>`
-      : '';
+  // Valoraciones
+  const ratings  = [5,4,3,2,1].map(r => ({ r, v: evts.filter(e => e.rating === r).length }));
+  const maxRat   = Math.max(...ratings.map(d => d.v), 1);
 
-    return `<div class="concert-card" style="animation-delay:${Math.min(i * .04, .3)}s">
-      <div class="concert-date">
-        <div class="concert-day">${day}</div>
-        <div class="concert-month">${month} ${year}</div>
+  // Compañeros
+  const compMap  = {};
+  evts.forEach(e => getCompanions(e).forEach(c => { compMap[c] = (compMap[c] || 0) + 1; }));
+  const comps    = Object.entries(compMap).sort((a,b) => b[1]-a[1]).slice(0,8).map(([n,v]) => ({n,v}));
+  const maxComp  = comps[0]?.v || 1;
+
+  content.innerHTML = `
+    <!-- Resumen -->
+    <div class="stats-summary">
+      <div class="stats-summary-item">
+        <div class="stats-summary-n">${evts.length}</div>
+        <div class="stats-summary-l">Eventos</div>
       </div>
-      <div class="concert-info">
-        <div class="concert-artist">${escHtml(ev._artistName)}</div>
-        ${venue  ? `<div class="concert-venue">📍 ${escHtml(venue)}</div>` : ''}
-        ${showTime ? `<div class="concert-time">🕐 ${hh}:${mm}</div>` : ''}
+      <div class="stats-summary-item">
+        <div class="stats-summary-n">${avgRat}</div>
+        <div class="stats-summary-l">Valoración media</div>
       </div>
-      <div class="concert-actions">
-        <button class="concert-add-btn"
-          onclick="event.stopPropagation();prefillFromConcert(${escHtml(concertData)})"
-          title="Añadir al diario">＋ Diario</button>
-        ${extBtn}
+      <div class="stats-summary-item">
+        <div class="stats-summary-n">${compSet.size || '—'}</div>
+        <div class="stats-summary-l">Compañeros</div>
       </div>
-    </div>`;
+    </div>
+
+    <!-- Actividad mensual -->
+    <div class="stats-section">
+      <div class="stats-section-title">Actividad mensual</div>
+      <div class="chart-wrap">${svgBarChart(monthly, maxMonth)}</div>
+    </div>
+
+    <!-- Categorías -->
+    ${cats.length > 1 ? `
+    <div class="stats-section">
+      <div class="stats-section-title">Por categoría</div>
+      <div class="stat-rows">
+        ${cats.map(d => `<div class="stat-row">
+          <div class="stat-row-label">${d.label}</div>
+          <div class="stat-row-track"><div class="stat-row-fill" style="width:${(d.v/maxCat*100).toFixed(1)}%;background:${d.color};opacity:.8"></div></div>
+          <div class="stat-row-n">${d.v}</div>
+        </div>`).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- Valoraciones -->
+    ${rated.length ? `
+    <div class="stats-section">
+      <div class="stats-section-title">Distribución de valoraciones</div>
+      <div class="stat-rows">
+        ${ratings.map(d => `<div class="stat-row">
+          <div class="stat-row-label" style="color:var(--amber);letter-spacing:1px">${'★'.repeat(d.r)}${'☆'.repeat(5-d.r)}</div>
+          <div class="stat-row-track"><div class="stat-row-fill" style="width:${(d.v/maxRat*100).toFixed(1)}%;background:var(--amber);opacity:.75"></div></div>
+          <div class="stat-row-n">${d.v}</div>
+        </div>`).join('')}
+      </div>
+    </div>` : ''}
+
+    <!-- Compañeros -->
+    ${comps.length ? `
+    <div class="stats-section">
+      <div class="stats-section-title">Tus compañeros</div>
+      <div class="stat-rows">
+        ${comps.map(c => `<div class="stat-row">
+          <div class="stat-row-label">${escHtml(c.n)}</div>
+          <div class="stat-row-track"><div class="stat-row-fill" style="width:${(c.v/maxComp*100).toFixed(1)}%;background:var(--c-concert);opacity:.75"></div></div>
+          <div class="stat-row-n">${c.v}</div>
+        </div>`).join('')}
+      </div>
+    </div>` : ''}
+  `;
+}
+
+function svgBarChart(months, maxVal) {
+  const slotW = 28, barW = 18, topPad = 14, maxBarH = 60, lblH = 16;
+  const W = 12 * slotW, H = topPad + maxBarH + lblH;
+
+  const bars = months.map((m, i) => {
+    const x  = i * slotW + 5;
+    const bh = m.v > 0 ? Math.max(Math.round((m.v / maxVal) * maxBarH), 4) : 0;
+    const by = topPad + maxBarH - bh;
+    return [
+      `<rect x="${x}" y="${m.v > 0 ? by : topPad+maxBarH-2}" width="${barW}" height="${m.v > 0 ? bh : 2}" fill="var(--amber)" rx="3" opacity="${m.v > 0 ? '.75' : '.07'}"/>`,
+      m.v > 0 ? `<text x="${x+barW/2}" y="${by-4}" text-anchor="middle" font-size="8" fill="var(--amber-lt)" font-family="system-ui">${m.v}</text>` : '',
+      `<text x="${x+barW/2}" y="${H-2}" text-anchor="middle" font-size="8" fill="var(--text3)" font-family="system-ui">${m.m}</text>`,
+    ].join('');
   }).join('');
 
-  el.innerHTML = `<div class="concerts-count">${events.length} ${plural} en ${escHtml(city)}</div>${cards}`;
-}
-
-// ── Pre-fill diary form from a concert ──
-function prefillFromConcert(concertJson) {
-  let concert;
-  try { concert = typeof concertJson === 'string' ? JSON.parse(concertJson) : concertJson; }
-  catch { return; }
-
-  const date = concert.datetime ? concert.datetime.split('T')[0] : new Date().toISOString().split('T')[0];
-
-  // Switch to diary tab first, then open the form
-  switchTab('diario');
-  setTimeout(() => {
-    openForm(); // opens a blank new-event form
-    // Override the fields we know from the concert
-    document.getElementById('sheet-title').textContent = 'Nuevo evento';
-    document.getElementById('f-title').value = concert.title  || '';
-    document.getElementById('f-date').value  = date;
-    document.getElementById('f-cat').value   = 'Concierto';
-    document.getElementById('f-venue').value = concert.venue?.name || '';
-    document.getElementById('f-city').value  = concert.venue?.city || '';
-    // Focus notes so user can add their impression
-    document.getElementById('f-notes').focus();
-  }, 120);
-}
-
-// ── Init artistas section ──
-function initArtistasSection() {
-  const cityInput = document.getElementById('a-city-input');
-  if (cityInput && userCity) cityInput.value = userCity;
-  renderArtistChips();
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">${bars}</svg>`;
 }
 
 // ── Init ──
 db.auth.getSession().then(({ data: { session } }) => { if (session) hideLoginScreen(); });
 loadEvents();
-initArtistasSection();

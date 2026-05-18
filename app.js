@@ -10,7 +10,7 @@ const CATS = {
   'Otro':       { emoji: '✨', color: 'var(--c-otro)'    },
 };
 
-let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = '', sortBy = 'recent';
+let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'recent';
 let searchQuery = '', formRating = 0, saving = false, editingId = null;
 let viewMode = localStorage.getItem('viewMode') || 'grid';
 let pendingImageFile = null, existingImageUrl = null, removeExistingImage = false;
@@ -412,7 +412,7 @@ async function deleteEvent(id) {
 // ── Filters ──
 function setFilter(c)           { filterCat = c; render(); }
 function setYear(y)             { filterYear = y; render(); }
-function setCompanionFilter(c)  { filterCompanion = filterCompanion === c ? '' : c; render(); }
+function setCompanionFilter(c)  { const idx = filterCompanion.indexOf(c); if (idx === -1) filterCompanion.push(c); else filterCompanion.splice(idx, 1); render(); }
 function getYears()             { return [...new Set(events.map(e => e.date?.slice(0,4)).filter(Boolean))].sort((a,b) => b-a); }
 
 function getTopCompanions(limit = 6) {
@@ -460,7 +460,7 @@ function renderFilters() {
     </select>`;
   const companionPills = getTopCompanions().length
     ? '<div class="filter-divider"></div>' + getTopCompanions().map(c =>
-        `<button class="pill${filterCompanion===c?' active':''}" onclick="setCompanionFilter('${c.replace(/'/g, "\\'")}')">👥 ${escHtml(c)}</button>`
+        `<button class="pill${filterCompanion.includes(c)?' active companion-active':''}" onclick="setCompanionFilter('${c.replace(/'/g, "\\'")}')">👥 ${escHtml(c)}</button>`
       ).join('')
     : '';
   document.getElementById('filters').innerHTML = catPills + yearPills + companionPills + sortControl;
@@ -474,8 +474,8 @@ function renderGrid() {
   let list = events;
   if (filterCat  !== 'Todos') list = list.filter(e => e.cat === filterCat);
   if (filterYear !== 'Todos') list = list.filter(e => e.date?.startsWith(filterYear));
-  if (filterCompanion) {
-    list = list.filter(e => getCompanions(e).includes(filterCompanion));
+  if (filterCompanion.length) {
+    list = list.filter(e => filterCompanion.some(c => getCompanions(e).includes(c)));
   }
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
@@ -530,7 +530,7 @@ function renderGrid() {
         ${loc ? `<div class="card-meta">📍 ${highlight(loc, q)}${ev.maps_url ? ` <a href="${ev.maps_url}" target="_blank" rel="noopener">🗺</a>` : ''}</div>` : ''}
         ${ev.date ? `<div class="card-meta">📅 ${fmtDate(ev.date)}</div>` : ''}
         ${stars ? `<div class="card-stars">${stars}</div>` : ''}
-        ${ev.companions ? `<div class="card-companions">${getCompanions(ev).map(c=>`<span class="companion-tag" onclick="event.stopPropagation();setCompanionFilter('${c.replace(/'/g, "\\'")}')">${escHtml(c)}</span>`).join('')}</div>` : ''}
+        ${ev.companions ? `<div class="card-companions">${getCompanions(ev).map(c=>`<span class="companion-tag${filterCompanion.includes(c)?' companion-active':''}" onclick="event.stopPropagation();setCompanionFilter('${c.replace(/'/g, "\\'")}')">${escHtml(c)}</span>`).join('')}</div>` : ''}
         ${ev.notes ? `<div class="card-notes">${highlight(ev.notes, q)}</div>` : ''}
       </div>
     </div>`;
@@ -1058,5 +1058,17 @@ function svgBarChart(months, maxVal) {
 }
 
 // ── Init ──
+// Inject decorative background orbs
+(function injectOrbs() {
+  const wrap = document.createElement('div');
+  wrap.className = 'bg-orbs';
+  for (let i = 0; i < 4; i++) {
+    const orb = document.createElement('div');
+    orb.className = 'bg-orb';
+    wrap.appendChild(orb);
+  }
+  document.body.insertBefore(wrap, document.body.firstChild);
+})();
+
 db.auth.getSession().then(({ data: { session } }) => { if (session) hideLoginScreen(); });
 loadEvents();

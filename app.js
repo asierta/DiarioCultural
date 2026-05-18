@@ -289,8 +289,9 @@ function openForm(ev = null) {
   focusX = parseInt((ev?.image_position || '50% 50%').split(' ')[0]) || 50;
   focusY = parseInt((ev?.image_position || '50% 50%').split(' ')[1]) || 50;
 
-  document.getElementById('sheet-title').textContent = ev ? 'Editar evento' : 'Nuevo evento';
-  document.getElementById('save-btn').textContent    = ev ? 'Guardar cambios' : 'Guardar evento';
+  const isEdit = !!(ev?.id);
+  document.getElementById('sheet-title').textContent = isEdit ? 'Editar evento' : (ev ? 'Duplicar evento' : 'Nuevo evento');
+  document.getElementById('save-btn').textContent    = isEdit ? 'Guardar cambios' : (ev ? 'Guardar copia' : 'Guardar evento');
   document.getElementById('f-title').value    = ev?.title   || '';
   document.getElementById('f-date').value     = ev?.date    || new Date().toISOString().split('T')[0];
   document.getElementById('f-cat').value      = ev?.cat     || 'Concierto';
@@ -459,7 +460,7 @@ function renderFilters() {
     </select>`;
   const companionPills = getTopCompanions().length
     ? '<div class="filter-divider"></div>' + getTopCompanions().map(c =>
-        `<button class="pill${filterCompanion===c?' active':''}" onclick="setCompanionFilter(${JSON.stringify(c)})">👥 ${escHtml(c)}</button>`
+        `<button class="pill${filterCompanion===c?' active':''}" onclick="setCompanionFilter('${c.replace(/'/g, "\\'")}')">👥 ${escHtml(c)}</button>`
       ).join('')
     : '';
   document.getElementById('filters').innerHTML = catPills + yearPills + companionPills + sortControl;
@@ -520,6 +521,8 @@ function renderGrid() {
           <span class="cat-label">${cat.emoji} ${ev.cat}</span>
           <div class="card-actions">
             <button class="card-btn" onclick='openForm(${JSON.stringify(ev).replace(/'/g,"&#39;")})' title="Editar">✏️</button>
+            <button class="card-btn" onclick="duplicateEvent(${ev.id})" title="Duplicar">⊕</button>
+            <button class="card-btn" onclick="shareEvent(${ev.id})" title="Compartir">↗</button>
             <button class="card-btn" onclick="deleteEvent(${ev.id})" title="Eliminar">✕</button>
           </div>
         </div>
@@ -527,7 +530,7 @@ function renderGrid() {
         ${loc ? `<div class="card-meta">📍 ${highlight(loc, q)}${ev.maps_url ? ` <a href="${ev.maps_url}" target="_blank" rel="noopener">🗺</a>` : ''}</div>` : ''}
         ${ev.date ? `<div class="card-meta">📅 ${fmtDate(ev.date)}</div>` : ''}
         ${stars ? `<div class="card-stars">${stars}</div>` : ''}
-        ${ev.companions ? `<div class="card-companions">${getCompanions(ev).map(c=>`<span class="companion-tag" onclick="event.stopPropagation();setCompanionFilter(${JSON.stringify(c)})">${escHtml(c)}</span>`).join('')}</div>` : ''}
+        ${ev.companions ? `<div class="card-companions">${getCompanions(ev).map(c=>`<span class="companion-tag" onclick="event.stopPropagation();setCompanionFilter('${c.replace(/'/g, "\\'")}')">${escHtml(c)}</span>`).join('')}</div>` : ''}
         ${ev.notes ? `<div class="card-notes">${highlight(ev.notes, q)}</div>` : ''}
       </div>
     </div>`;
@@ -561,7 +564,343 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// ── Estadísticas detalladas ──
+// ── Duplicar ──
+function duplicateEvent(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  openForm({ ...ev, id: null });   // id:null → openForm lo trata como nuevo
+}
+
+// ── Compartir ──
+async function shareEvent(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+
+  const btn = document.querySelector(`[onclick="shareEvent(${id})"]`);
+  if (btn) { btn.textContent = '…'; btn.disabled = true; }
+
+  try {
+    const blob = await buildShareImage(ev);
+    const filename = `${(ev.title || 'evento').slice(0, 40).replace(/[^\w\s-]/g,'')}.png`;
+    const file = new File([blob], filename, { type: 'image/png' });
+
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: ev.title });
+    } else {
+      downloadBlob(blob, filename);
+    }
+  } catch(err) {
+    if (err?.name !== 'AbortError') {
+      // Fallback: try sharing just text
+      const text = [ev.title, ev.date ? fmtDate(ev.date) : '', ev.venue, ev.city].filter(Boolean).join(' · ');
+      if (navigator.share) {
+        navigator.share({ title: ev.title, text }).catch(() => {});
+      } else {
+        navigator.clipboard?.writeText(text).then(() => toast('Texto copiado al portapapeles'));
+      }
+    }
+  } finally {
+    if (btn) { btn.textContent = '↗'; btn.disabled = false; }
+  }
+}
+
+async function buildShareImage(ev) {
+  const S = 1080, PAD = 88;
+  const canvas = document.createElement('canvas');
+  canvas.width = S; canvas.height = S;
+  const ctx = canvas.getContext('2d');
+
+  // Fondo
+  ctx.fillStyle = '#09080a';
+  ctx.fillRect(0, 0, S, S);
+
+  // Imagen de fondo si existe
+  if (ev.image_url) {
+    try {
+      const img = await loadImg(ev.image_url);
+      const scale = Math.max(S / img.width, S / img.height);
+      const w = img.width * scale, h = img.height * scale;
+      const [fx, fy] = (ev.image_position || '50% 50%').split(' ').map(p => parseFloat(p) / 100);
+      ctx.drawImage(img, -(w - S) * fx, -(h - S) * fy, w, h);
+      // Overlay degradado
+      const grad = ctx.createLinearGradient(0, 0, 0, S);
+      grad.addColorStop(0,   'rgba(9,8,10,.55)');
+      grad.addColorStop(.45, 'rgba(9,8,10,.40)');
+      grad.addColorStop(1,   'rgba(9,8,10,.90)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, S, S);
+    } catch(_) { /* imagen no disponible */ }
+  }
+
+  // Barra de acento (izquierda)
+  const CAT_COLORS = { Concierto:'#a87fd4', Cine:'#5e9fd8', Teatro:'#d4776a', Exposición:'#72b87c', Otro:'#c9943a' };
+  const accent = CAT_COLORS[ev.cat] || '#c9943a';
+  ctx.fillStyle = accent;
+  ctx.fillRect(0, 0, 7, S);
+
+  // Categoría
+  const cat = CATS[ev.cat] || CATS['Otro'];
+  ctx.font = '500 32px system-ui, sans-serif';
+  ctx.fillStyle = accent;
+  ctx.fillText((cat.emoji + '  ' + (ev.cat || '')).toUpperCase(), PAD, 196);
+
+  // Título (máx 3 líneas)
+  ctx.fillStyle = '#eee8df';
+  ctx.font = '300 74px Georgia, "Times New Roman", serif';
+  const titleLines = canvasWrap(ctx, ev.title || '', S - PAD * 2, 3);
+  titleLines.forEach((line, i) => ctx.fillText(line, PAD, 300 + i * 88));
+
+  let y = 300 + titleLines.length * 88 + 48;
+
+  // Fecha + lugar
+  const meta = [ev.date ? fmtDate(ev.date) : '', [ev.venue, ev.city].filter(Boolean).join(', ')].filter(Boolean).join('   ·   ');
+  if (meta) {
+    ctx.font = '300 34px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(133,126,136,.9)';
+    ctx.fillText(meta, PAD, y);
+    y += 56;
+  }
+
+  // Valoración
+  if (ev.rating > 0) {
+    ctx.font = '44px serif';
+    ctx.fillStyle = '#e4b96a';
+    ctx.fillText('★'.repeat(ev.rating) + '☆'.repeat(5 - ev.rating), PAD, y + 8);
+  }
+
+  // Divider + branding
+  ctx.strokeStyle = 'rgba(133,126,136,.18)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(PAD, S - 96); ctx.lineTo(S - PAD, S - 96); ctx.stroke();
+  ctx.font = '300 28px Georgia, serif';
+  ctx.fillStyle = 'rgba(133,126,136,.45)';
+  ctx.fillText('Diario Cultural', PAD, S - 60);
+
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+}
+
+function loadImg(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function canvasWrap(ctx, text, maxW, maxLines) {
+  const words = text.split(' ');
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && cur) {
+      lines.push(cur);
+      if (lines.length >= maxLines) break;
+      cur = w;
+    } else { cur = test; }
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  // Truncar última línea si no cabe
+  const last = lines[lines.length - 1];
+  if (last && ctx.measureText(last).width > maxW) {
+    let t = last;
+    while (ctx.measureText(t + '…').width > maxW && t.length > 0) t = t.slice(0, -1);
+    lines[lines.length - 1] = t + '…';
+  }
+  return lines;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Imagen guardada');
+}
+
+
+// ── Año en imágenes ──
+const PLURAL = { Concierto:'conciertos', Cine:'películas', Teatro:'obras de teatro', Exposición:'exposiciones', Otro:'eventos' };
+const MEDALS = ['🥇','🥈','🥉'];
+let wSlides = [], wIdx = 0;
+
+function openWrapped(year) {
+  const evts = events.filter(e => e.date?.startsWith(year));
+  if (!evts.length) { toast(`Sin eventos en ${year}`, true); return; }
+  wSlides = buildWrappedSlides(evts, year);
+  wIdx = 0;
+  document.getElementById('wrapped-overlay').classList.add('open');
+  showSlide(0);
+  setTimeout(() => {
+    const h = document.getElementById('wrapped-hint');
+    if (h) h.style.opacity = '0';
+  }, 3000);
+}
+
+function closeWrapped() {
+  document.getElementById('wrapped-overlay').classList.remove('open');
+}
+
+function onWrappedTap(e) {
+  const mid = window.innerWidth / 2;
+  e.clientX < mid ? prevSlide() : nextSlide();
+}
+
+function nextSlide() { if (wIdx < wSlides.length - 1) showSlide(wIdx + 1); else closeWrapped(); }
+function prevSlide() { if (wIdx > 0) showSlide(wIdx - 1); }
+
+function showSlide(idx) {
+  wIdx = idx;
+  const slide = wSlides[idx];
+  document.getElementById('wrapped-progress').innerHTML =
+    wSlides.map((_,i) => `<div class="wp-seg ${i<idx?'done':i===idx?'active':''}"></div>`).join('');
+  const el = document.getElementById('wrapped-slide');
+  el.style.background = slide.bg + ', #09080a';
+  el.innerHTML = `<div class="ws-inner">${slide.html}</div>`;
+}
+
+function buildWrappedSlides(evts, year) {
+  const slides = [];
+  const MNAMES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const CAT_C  = { Concierto:'#a87fd4', Cine:'#5e9fd8', Teatro:'#d4776a', Exposición:'#72b87c', Otro:'#c9943a' };
+
+  const rated    = evts.filter(e=>e.rating>0).sort((a,b)=>b.rating-a.rating);
+  const avgRat   = rated.length ? (rated.reduce((s,e)=>s+e.rating,0)/rated.length).toFixed(1) : null;
+  const months   = MNAMES.map((m,i) => ({ m, v: evts.filter(e=>e.date && +e.date.split('-')[1]-1===i).length }));
+  const activeMo = months.filter(m=>m.v>0).length;
+  const catCts   = Object.entries(CATS).map(([c,meta]) => ({ c, meta, v: evts.filter(e=>e.cat===c).length }))
+                     .filter(d=>d.v>0).sort((a,b)=>b.v-a.v);
+  const topCat   = catCts[0];
+  const compMap  = {};
+  evts.forEach(e => getCompanions(e).forEach(c => { compMap[c]=(compMap[c]||0)+1; }));
+  const comps    = Object.entries(compMap).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const withImg  = evts.filter(e=>e.image_url);
+
+  // Slide 1 — Portada
+  slides.push({ bg:'radial-gradient(ellipse at 30% 40%, rgba(201,148,58,.22) 0%, transparent 55%), radial-gradient(ellipse at 75% 65%, rgba(168,127,212,.14) 0%, transparent 55%)', html:`
+    <div class="ws-eyebrow">tu año en cultura</div>
+    <div class="ws-year-bg">${year}</div>
+    <div class="ws-big">${evts.length}</div>
+    <div class="ws-label">evento${evts.length!==1?'s':''} vivido${evts.length!==1?'s':''}</div>
+    ${avgRat?`<div class="ws-sub">valoración media <span class="ws-accent">${avgRat} ★</span></div>`:''}
+  `});
+
+  // Slide 2 — Actividad mensual
+  slides.push({ bg:'radial-gradient(ellipse at 50% 25%, rgba(94,159,216,.18) 0%, transparent 55%)', html:`
+    <div class="ws-eyebrow">tu actividad</div>
+    <div class="ws-big">${activeMo}</div>
+    <div class="ws-label">mese${activeMo!==1?'s':''} con eventos</div>
+    <div class="ws-months">
+      ${months.map(m=>`
+        <div class="ws-mitem ${m.v>0?'on':''}">
+          <div class="ws-mdot">${m.v>0?m.v:''}</div>
+          <div class="ws-mlbl">${m.m}</div>
+        </div>`).join('')}
+    </div>
+  `});
+
+  // Slide 3 — Categoría favorita
+  if (topCat) {
+    const col = CAT_C[topCat.c]||'#c9943a';
+    slides.push({ bg:`radial-gradient(ellipse at 40% 40%, ${col}2e 0%, transparent 60%)`, html:`
+      <div class="ws-eyebrow">tu pasión</div>
+      <div class="ws-emoji">${topCat.meta.emoji}</div>
+      <div class="ws-big" style="color:${col}">${topCat.v}</div>
+      <div class="ws-label">${PLURAL[topCat.c]||topCat.c.toLowerCase()}</div>
+      ${catCts.length>1?`<div class="ws-sub">seguido de ${catCts[1].meta.emoji} ${catCts[1].c} (${catCts[1].v})</div>`:''}
+    `});
+  }
+
+  // Slide 4 — Lo mejor
+  if (rated.length) {
+    slides.push({ bg:'radial-gradient(ellipse at 50% 25%, rgba(228,185,106,.15) 0%, transparent 55%)', html:`
+      <div class="ws-eyebrow">tus favoritos</div>
+      <div class="ws-title-sm">Lo que más te gustó</div>
+      <div class="ws-top-list">
+        ${rated.slice(0,3).map((ev,i)=>`
+          <div class="ws-top-item">
+            <div class="ws-top-rank">${i+1}</div>
+            <div>
+              <div class="ws-top-name">${escHtml(ev.title)}</div>
+              <div class="ws-top-meta">${'★'.repeat(ev.rating)}${'☆'.repeat(5-ev.rating)} ${ev.date?fmtDate(ev.date):''}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    `});
+  }
+
+  // Slide 5 — Compañeros
+  if (comps.length) {
+    slides.push({ bg:'radial-gradient(ellipse at 55% 35%, rgba(114,184,124,.15) 0%, transparent 55%)', html:`
+      <div class="ws-eyebrow">tus compañeros</div>
+      <div class="ws-big">${Object.keys(compMap).length}</div>
+      <div class="ws-label">persona${Object.keys(compMap).length!==1?'s':''} contigo</div>
+      <div class="ws-comp-list">
+        ${comps.map(([name,v],i)=>`
+          <div class="ws-comp-row">
+            <span class="ws-comp-medal">${MEDALS[i]||'·'}</span>
+            <span class="ws-comp-name">${escHtml(name)}</span>
+            <span class="ws-comp-n">${v} vez${v!==1?'es':''}</span>
+          </div>`).join('')}
+      </div>
+    `});
+  }
+
+  // Slide 6 — Galería
+  if (withImg.length >= 4) {
+    slides.push({ bg:'#000', html:`
+      <div class="ws-eyebrow">tu galería</div>
+      <div class="ws-title-sm">${withImg.length} momentos con imagen</div>
+      <div class="ws-gallery">
+        ${withImg.slice(0,9).map(ev=>
+          `<div class="ws-gitem" style="background-image:url('${ev.image_url}');background-position:${ev.image_position||'50% 50%'}"></div>`
+        ).join('')}
+      </div>
+    `});
+  }
+
+  // Slide 7 — Cierre
+  const finalItems = [
+    { n:evts.length, l:'eventos' },
+    activeMo   ? { n:activeMo, l:'meses activo' } : null,
+    avgRat     ? { n:avgRat,   l:'valoración media' } : null,
+    Object.keys(compMap).length ? { n:Object.keys(compMap).length, l:'compañeros' } : null,
+  ].filter(Boolean).slice(0,4);
+
+  slides.push({ bg:'radial-gradient(ellipse at 50% 50%, rgba(201,148,58,.18) 0%, rgba(168,127,212,.1) 50%, transparent 70%)', html:`
+    <div class="ws-eyebrow">${year} en números</div>
+    <div class="ws-final-grid">
+      ${finalItems.map(f=>`<div class="ws-fitem"><div class="ws-fn">${f.n}</div><div class="ws-fl">${f.l}</div></div>`).join('')}
+    </div>
+    <div class="ws-brand">Diario <em>Cultural</em></div>
+    <div class="ws-cta">¿Y el próximo año?</div>
+  `});
+
+  return slides;
+}
+
+let _wTouchX = 0;
+document.addEventListener('touchstart', e => {
+  if (document.getElementById('wrapped-overlay').classList.contains('open'))
+    _wTouchX = e.touches[0].clientX;
+}, { passive: true });
+document.addEventListener('touchend', e => {
+  if (!document.getElementById('wrapped-overlay').classList.contains('open')) return;
+  const dx = e.changedTouches[0].clientX - _wTouchX;
+  if (Math.abs(dx) > 45) dx < 0 ? nextSlide() : prevSlide();
+}, { passive: true });
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('wrapped-overlay').classList.contains('open')) return;
+  if (e.key==='ArrowRight'||e.key===' ') nextSlide();
+  if (e.key==='ArrowLeft') prevSlide();
+  if (e.key==='Escape') closeWrapped();
+});
+
+
 let statsYear = 'Todos';
 
 function openStats() {
@@ -693,6 +1032,11 @@ function renderStatsPanel() {
       </div>
     </div>` : ''}
   `;
+  // Botón "Año en imágenes"
+  const targetYear = statsYear !== 'Todos' ? statsYear : getYears()[0];
+  if (targetYear) {
+    content.innerHTML += `<button class="btn-wrapped" onclick="closeStats();openWrapped('${targetYear}')">🎞 Ver ${targetYear} en imágenes</button>`;
+  }
 }
 
 function svgBarChart(months, maxVal) {

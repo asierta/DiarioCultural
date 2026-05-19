@@ -11,7 +11,7 @@ const CATS = {
 };
 
 let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'recent';
-let searchQuery = '', formRating = 0, saving = false, editingId = null;
+let searchQuery = '', formRating = 0, hoverRating = 0, saving = false, editingId = null;
 let viewMode = localStorage.getItem('viewMode') || 'grid';
 let pendingImageFile = null, existingImageUrl = null, removeExistingImage = false;
 let focusX = 50, focusY = 50, tempFocusX = 50, tempFocusY = 50;
@@ -95,6 +95,32 @@ async function loadEvents() {
   if (error) { toast('Error al conectar con la base de datos', true); return; }
   events = data || [];
   render();
+}
+
+// ── Half-star helpers ──
+function starsHtml(rating) {
+  if (!rating) return '';
+  let out = '';
+  for (let i = 1; i <= 5; i++) {
+    if (rating >= i)
+      out += '<span class="s-star s-full">★</span>';
+    else if (rating >= i - 0.5)
+      out += '<span class="s-star s-half"><span class="s-b">★</span><span class="s-f">★</span></span>';
+    else
+      out += '<span class="s-star s-empty">★</span>';
+  }
+  return out;
+}
+
+function starsCanvasText(rating) {
+  // Returns a plain string for canvas rendering (uses ½ for half steps)
+  let s = '';
+  for (let i = 1; i <= 5; i++) {
+    if (rating >= i)      s += '★';
+    else if (rating >= i - 0.5) s += '⯨';
+    else s += '☆';
+  }
+  return s;
 }
 
 // ── View toggle ──
@@ -330,12 +356,37 @@ function overlayClick(e) {
 }
 
 function renderStars() {
-  document.getElementById('star-input').innerHTML = [1,2,3,4,5].map(n =>
-    `<button class="star-btn${n <= formRating ? ' filled' : ''}" onclick="setRating(${n})">${n <= formRating ? '★' : '☆'}</button>`
-  ).join('');
+  const display = hoverRating || formRating;
+  document.getElementById('star-input').innerHTML = [1,2,3,4,5].map(i => {
+    const full = display >= i;
+    const half = !full && display >= i - 0.5;
+    const cls  = full ? ' filled' : half ? ' half-filled' : '';
+    const inner = full
+      ? '★'
+      : half
+        ? '<span class="s-half" style="font-size:inherit;vertical-align:top"><span class="s-b">★</span><span class="s-f">★</span></span>'
+        : '☆';
+    return `<button class="star-btn${cls}" onclick="clickStar(event,${i})" onmousemove="hoverStar(event,${i})" onmouseleave="leaveStars()">${inner}</button>`;
+  }).join('');
 }
 
-function setRating(n) { formRating = n; renderStars(); }
+function clickStar(e, pos) {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const val  = (e.clientX - rect.left) < rect.width / 2 ? pos - 0.5 : pos;
+  formRating = (formRating === val) ? 0 : val;
+  hoverRating = 0;
+  renderStars();
+}
+
+function hoverStar(e, pos) {
+  const rect = e.currentTarget.getBoundingClientRect();
+  hoverRating = (e.clientX - rect.left) < rect.width / 2 ? pos - 0.5 : pos;
+  renderStars();
+}
+
+function leaveStars() { hoverRating = 0; renderStars(); }
+
+function setRating(n) { formRating = n; renderStars(); }  // kept for compatibility
 
 async function saveEvent() {
   if (saving) return;
@@ -507,34 +558,79 @@ function renderGrid() {
 
   el.innerHTML = list.map((ev, i) => {
     const cat   = CATS[ev.cat] || CATS['Otro'];
-    const stars = ev.rating > 0 ? '★'.repeat(ev.rating) + '☆'.repeat(5 - ev.rating) : '';
+    const stars = starsHtml(ev.rating);
     const loc   = [ev.venue, ev.city].filter(Boolean).join(' · ');
     const pos   = ev.image_position || '50% 50%';
     const q     = searchQuery;
     const imgHtml = ev.image_url
-      ? `<div class="card-image-wrap"><img src="${ev.image_url}" alt="${ev.title}" loading="lazy" style="object-position:${pos}"/></div>`
-      : '';
-    return `<div class="event-card" style="--cat-color:${cat.color}; animation-delay:${Math.min(i*.05,.3)}s">
+      ? `<div class="card-image-wrap"><img src="${ev.image_url}" alt="${escHtml(ev.title)}" loading="lazy" style="object-position:${pos}"/></div>`
+      : `<div class="card-image-wrap card-img-placeholder" style="--cat-color:${cat.color}"><span class="card-img-emoji">${cat.emoji}</span></div>`;
+    return `<div class="event-card" style="--cat-color:${cat.color}; animation-delay:${Math.min(i*.05,.3)}s" onclick="openDetail(${ev.id})">
       ${imgHtml}
       <div class="card-body">
         <div class="card-top">
           <span class="cat-label">${cat.emoji} ${ev.cat}</span>
           <div class="card-actions">
-            <button class="card-btn" onclick='openForm(${JSON.stringify(ev).replace(/'/g,"&#39;")})' title="Editar">✏️</button>
-            <button class="card-btn" onclick="duplicateEvent(${ev.id})" title="Duplicar">⊕</button>
-            <button class="card-btn" onclick="shareEvent(${ev.id})" title="Compartir">↗</button>
-            <button class="card-btn" onclick="deleteEvent(${ev.id})" title="Eliminar">✕</button>
+            <button class="card-btn" onclick='event.stopPropagation();openForm(${JSON.stringify(ev).replace(/'/g,"&#39;")})' title="Editar"><span class="btn-icon">✏️</span><span class="btn-lbl">Editar</span></button>
+            <button class="card-btn" onclick="event.stopPropagation();duplicateEvent(${ev.id})" title="Duplicar"><span class="btn-icon">📋</span><span class="btn-lbl">Copiar</span></button>
+            <button class="card-btn" onclick="event.stopPropagation();shareEvent(${ev.id})" title="Compartir"><span class="btn-icon">📤</span><span class="btn-lbl">Enviar</span></button>
+            <button class="card-btn btn-del" onclick="event.stopPropagation();deleteEvent(${ev.id})" title="Eliminar"><span class="btn-icon">🗑</span><span class="btn-lbl">Borrar</span></button>
           </div>
         </div>
         <div class="card-title">${highlight(ev.title, q)}</div>
         ${loc ? `<div class="card-meta">📍 ${highlight(loc, q)}${ev.maps_url ? ` <a href="${ev.maps_url}" target="_blank" rel="noopener">🗺</a>` : ''}</div>` : ''}
         ${ev.date ? `<div class="card-meta">📅 ${fmtDate(ev.date)}</div>` : ''}
-        ${stars ? `<div class="card-stars">${stars}</div>` : ''}
+        ${stars ? `<div class="card-stars stars-row">${stars}</div>` : ''}
         ${ev.companions ? `<div class="card-companions">${getCompanions(ev).map(c=>`<span class="companion-tag${filterCompanion.includes(c)?' companion-active':''}" onclick="event.stopPropagation();setCompanionFilter('${c.replace(/'/g, "\\'")}')">${escHtml(c)}</span>`).join('')}</div>` : ''}
         ${ev.notes ? `<div class="card-notes">${highlight(ev.notes, q)}</div>` : ''}
       </div>
     </div>`;
   }).join('');
+}
+
+
+// ── Detail view ──
+function openDetail(id) {
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+  const cat = CATS[ev.cat] || CATS['Otro'];
+  const loc = [ev.venue, ev.city].filter(Boolean).join(' · ');
+  document.getElementById('detail-panel').innerHTML = `
+    <div class="detail-img-wrap">
+      ${ev.image_url
+        ? `<img src="${ev.image_url}" alt="${escHtml(ev.title)}" class="detail-img" style="object-position:${ev.image_position||'50% 50%'}"/>`
+        : `<div class="detail-img-placeholder" style="--cat-color:${cat.color}">${cat.emoji}</div>`
+      }
+      <button class="detail-close" onclick="closeDetail()">✕</button>
+      <div class="detail-cat-badge" style="--cat-color:${cat.color}">${cat.emoji} ${ev.cat}</div>
+    </div>
+    <div class="detail-body">
+      <h2 class="detail-title">${escHtml(ev.title)}</h2>
+      <div class="detail-meta-list">
+        ${ev.date    ? `<div class="detail-meta"><span class="dm-icon">📅</span>${fmtDate(ev.date)}</div>` : ''}
+        ${loc        ? `<div class="detail-meta"><span class="dm-icon">📍</span>${escHtml(loc)}${ev.maps_url ? ` <a href="${ev.maps_url}" target="_blank" rel="noopener" class="detail-map-link">Ver en mapa →</a>` : ''}</div>` : ''}
+        ${ev.companions ? `<div class="detail-meta"><span class="dm-icon">👥</span>${getCompanions(ev).map(c=>`<span class="companion-tag">${escHtml(c)}</span>`).join('')}</div>` : ''}
+      </div>
+      ${ev.rating    ? `<div class="detail-stars stars-row">${starsHtml(ev.rating)}</div>` : ''}
+      ${ev.notes     ? `<div class="detail-notes">${escHtml(ev.notes).replace(/\n/g,'<br>')}</div>` : ''}
+      <div class="detail-actions">
+        <button class="detail-action-btn" onclick="closeDetail();setTimeout(()=>openForm(events.find(e=>e.id===${ev.id})),120)">✏️ Editar</button>
+        <button class="detail-action-btn" onclick="closeDetail();setTimeout(()=>duplicateEvent(${ev.id}),120)">📋 Copiar</button>
+        <button class="detail-action-btn" onclick="shareEvent(${ev.id})">📤 Enviar</button>
+        <button class="detail-action-btn btn-del" onclick="closeDetail();setTimeout(()=>deleteEvent(${ev.id}),120)">🗑 Borrar</button>
+      </div>
+    </div>`;
+  document.getElementById('detail-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDetail() {
+  document.getElementById('detail-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function detailOverlayClick(e) {
+  if (e.target === document.getElementById('detail-overlay')) closeDetail();
 }
 
 // ── Google Places ──
@@ -600,7 +696,7 @@ async function shareEvent(id) {
       }
     }
   } finally {
-    if (btn) { btn.textContent = '↗'; btn.disabled = false; }
+    if (btn) { btn.innerHTML = '<span class="btn-icon">📤</span><span class="btn-lbl">Enviar</span>'; btn.disabled = false; }
   }
 }
 
@@ -664,8 +760,27 @@ async function buildShareImage(ev) {
   // Valoración
   if (ev.rating > 0) {
     ctx.font = '44px serif';
-    ctx.fillStyle = '#e4b96a';
-    ctx.fillText('★'.repeat(ev.rating) + '☆'.repeat(5 - ev.rating), PAD, y + 8);
+    const starSize = 48;
+    for (let i = 0; i < 5; i++) {
+      const sx = PAD + i * (starSize * 1.05);
+      if (ev.rating >= i + 1) {
+        ctx.fillStyle = '#e4b96a';
+        ctx.fillText('★', sx, y + 8);
+      } else if (ev.rating >= i + 0.5) {
+        ctx.fillStyle = 'rgba(228,185,106,.2)';
+        ctx.fillText('★', sx, y + 8);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(sx, y + 8 - starSize, starSize * 0.52, starSize * 1.1);
+        ctx.clip();
+        ctx.fillStyle = '#e4b96a';
+        ctx.fillText('★', sx, y + 8);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = 'rgba(228,185,106,.2)';
+        ctx.fillText('★', sx, y + 8);
+      }
+    }
   }
 
   // Divider + branding
@@ -793,7 +908,7 @@ function buildWrappedSlides(evts, year) {
   slides.push({ bg:'radial-gradient(ellipse at 50% 25%, rgba(94,159,216,.18) 0%, transparent 55%)', html:`
     <div class="ws-eyebrow">tu actividad</div>
     <div class="ws-big">${activeMo}</div>
-    <div class="ws-label">mese${activeMo!==1?'s':''} con eventos</div>
+    <div class="ws-label">${activeMo === 1 ? 'mes' : 'meses'} con eventos</div>
     <div class="ws-months">
       ${months.map(m=>`
         <div class="ws-mitem ${m.v>0?'on':''}">
@@ -826,7 +941,7 @@ function buildWrappedSlides(evts, year) {
             <div class="ws-top-rank">${i+1}</div>
             <div>
               <div class="ws-top-name">${escHtml(ev.title)}</div>
-              <div class="ws-top-meta">${'★'.repeat(ev.rating)}${'☆'.repeat(5-ev.rating)} ${ev.date?fmtDate(ev.date):''}</div>
+              <div class="ws-top-meta ws-top-stars">${starsHtml(ev.rating)} ${ev.date?fmtDate(ev.date):''</div>
             </div>
           </div>`).join('')}
       </div>
@@ -866,7 +981,7 @@ function buildWrappedSlides(evts, year) {
   // Slide 7 — Cierre
   const finalItems = [
     { n:evts.length, l:'eventos' },
-    activeMo   ? { n:activeMo, l:'meses activo' } : null,
+    activeMo   ? { n:activeMo, l: activeMo === 1 ? 'mes activo' : 'meses activos' } : null,
     avgRat     ? { n:avgRat,   l:'valoración media' } : null,
     Object.keys(compMap).length ? { n:Object.keys(compMap).length, l:'compañeros' } : null,
   ].filter(Boolean).slice(0,4);
@@ -961,7 +1076,7 @@ function renderStatsPanel() {
   const maxCat = cats[0]?.v || 1;
 
   // Valoraciones
-  const ratings  = [5,4,3,2,1].map(r => ({ r, v: evts.filter(e => e.rating === r).length }));
+  const ratings  = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5].map(r => ({ r, v: evts.filter(e => e.rating === r).length })).filter(d => d.v > 0);
   const maxRat   = Math.max(...ratings.map(d => d.v), 1);
 
   // Compañeros
@@ -1012,7 +1127,7 @@ function renderStatsPanel() {
       <div class="stats-section-title">Distribución de valoraciones</div>
       <div class="stat-rows">
         ${ratings.map(d => `<div class="stat-row">
-          <div class="stat-row-label" style="color:var(--amber);letter-spacing:1px">${'★'.repeat(d.r)}${'☆'.repeat(5-d.r)}</div>
+          <div class="stat-row-label stars-row" style="gap:1px">${starsHtml(d.r)}</div>
           <div class="stat-row-track"><div class="stat-row-fill" style="width:${(d.v/maxRat*100).toFixed(1)}%;background:var(--amber);opacity:.75"></div></div>
           <div class="stat-row-n">${d.v}</div>
         </div>`).join('')}
@@ -1059,13 +1174,11 @@ function svgBarChart(months, maxVal) {
 
 // ── Init ──
 // Inject decorative background orbs
-(function injectOrbs() {
+(function() {
   const wrap = document.createElement('div');
   wrap.className = 'bg-orbs';
   for (let i = 0; i < 4; i++) {
-    const orb = document.createElement('div');
-    orb.className = 'bg-orb';
-    wrap.appendChild(orb);
+    wrap.appendChild(Object.assign(document.createElement('div'), { className: 'bg-orb' }));
   }
   document.body.insertBefore(wrap, document.body.firstChild);
 })();

@@ -941,7 +941,7 @@ function buildWrappedSlides(evts, year) {
             <div class="ws-top-rank">${i+1}</div>
             <div>
               <div class="ws-top-name">${escHtml(ev.title)}</div>
-              <div class="ws-top-meta ws-top-stars">${starsHtml(ev.rating)} ${ev.date?fmtDate(ev.date):''</div>
+              <div class="ws-top-meta ws-top-stars">${starsHtml(ev.rating)} ${ev.date?fmtDate(ev.date):''}</div>
             </div>
           </div>`).join('')}
       </div>

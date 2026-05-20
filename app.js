@@ -565,12 +565,12 @@ function renderGrid() {
       ${imgHtml}
       <div class="card-body">
         <div class="card-top">
-          <span class="cat-label">${cat.emoji} ${ev.cat}</span>
+          <span class="cat-label">${cat.emoji}</span>
           <div class="card-actions">
             <button class="card-btn" onclick='event.stopPropagation();openForm(${JSON.stringify(ev).replace(/'/g,"&#39;")})' title="Editar"><span class="btn-icon">✏️</span><span class="btn-lbl">Editar</span></button>
             <button class="card-btn" onclick="event.stopPropagation();duplicateEvent(${ev.id})" title="Duplicar"><span class="btn-icon">📋</span><span class="btn-lbl">Copiar</span></button>
             <button class="card-btn" onclick="event.stopPropagation();shareEvent(${ev.id})" title="Compartir"><span class="btn-icon">📤</span><span class="btn-lbl">Enviar</span></button>
-            <button class="card-btn btn-del" onclick="event.stopPropagation();deleteEvent(${ev.id})" title="Eliminar"><span class="btn-icon">🗑</span><span class="btn-lbl">Borrar</span></button>
+            <button class="card-btn btn-del" onclick="event.stopPropagation();deleteEvent(${ev.id})" title="Eliminar"><span class="btn-icon">✕</span><span class="btn-lbl">Borrar</span></button>
           </div>
         </div>
         <div class="card-title">${highlight(ev.title, q)}</div>
@@ -613,7 +613,7 @@ function openDetail(id) {
         <button class="detail-action-btn" onclick="closeDetail();setTimeout(()=>openForm(events.find(e=>e.id===${ev.id})),120)">✏️ Editar</button>
         <button class="detail-action-btn" onclick="closeDetail();setTimeout(()=>duplicateEvent(${ev.id}),120)">📋 Copiar</button>
         <button class="detail-action-btn" onclick="shareEvent(${ev.id})">📤 Enviar</button>
-        <button class="detail-action-btn btn-del" onclick="closeDetail();setTimeout(()=>deleteEvent(${ev.id}),120)">🗑 Borrar</button>
+        <button class="detail-action-btn btn-del" onclick="closeDetail();setTimeout(()=>deleteEvent(${ev.id}),120)">✕ Borrar</button>
       </div>
     </div>`;
   document.getElementById('detail-overlay').classList.add('open');

@@ -10,13 +10,30 @@ const CATS = {
   'Otro':       { emoji: '✨', color: 'var(--c-otro)'    },
 };
 
-let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'newest';
+let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'newest', filterUpcoming = false;
 let searchQuery = '', formRating = 0, hoverRating = 0, saving = false, editingId = null;
 let viewMode = localStorage.getItem('viewMode') || 'grid';
 let pendingImageFile = null, existingImageUrl = null, removeExistingImage = false;
 let focusX = 50, focusY = 50, tempFocusX = 50, tempFocusY = 50;
 
 // ── Utils ──
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(dateStr + 'T00:00:00');
+  return Math.round((d - today) / 86400000);
+}
+
+function countdownLabel(days) {
+  if (days < 0)  return null;
+  if (days === 0) return { text: '¡Hoy! 🎉', cls: 'today' };
+  if (days === 1) return { text: 'Mañana',    cls: 'tomorrow' };
+  if (days <= 7)  return { text: `En ${days} días`, cls: 'soon' };
+  if (days <= 30) return { text: `En ${days} días`, cls: '' };
+  return null;
+}
+
+
 function toast(msg, isError = false) {
   const el = document.getElementById('toast');
   el.textContent = msg;
@@ -457,7 +474,8 @@ async function deleteEvent(id) {
 }
 
 // ── Filters ──
-function setFilter(c)           { filterCat = c; render(); }
+function setFilter(c)           { filterCat = c; filterUpcoming = false; render(); }
+function toggleUpcoming()       { filterUpcoming = !filterUpcoming; if (filterUpcoming) { filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; } render(); }
 function setYear(y)             { filterYear = y; render(); }
 function setCompanionFilter(c)  { const idx = filterCompanion.indexOf(c); if (idx === -1) filterCompanion.push(c); else filterCompanion.splice(idx, 1); render(); }
 function getYears()             { return [...new Set(events.map(e => e.date?.slice(0,4)).filter(Boolean))].sort((a,b) => b-a); }
@@ -488,6 +506,10 @@ function renderStats() {
 
 function renderFilters() {
   const years = getYears();
+  const upcomingCount = events.filter(e => e.date && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 90).length;
+  const upcomingPill = upcomingCount > 0
+    ? `<button class="pill pill-upcoming${filterUpcoming ? ' active' : ''}" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span></button><div class="filter-divider"></div>`
+    : '';
   const catPills = ['Todos', ...Object.keys(CATS)].map(c =>
     `<button class="pill${filterCat===c?' active':''}" onclick="setFilter('${c}')">${c==='Todos'?'Todos':CATS[c].emoji+' '+c}</button>`
   ).join('');
@@ -510,7 +532,7 @@ function renderFilters() {
         `<button class="pill${filterCompanion.includes(c)?' active companion-active':''}" onclick="setCompanionFilter('${c.replace(/'/g, "\\'")}')">👥 ${escHtml(c)}</button>`
       ).join('')
     : '';
-  document.getElementById('filters').innerHTML = catPills + yearPills + companionPills + sortControl;
+  document.getElementById('filters').innerHTML = upcomingPill + catPills + yearPills + companionPills + sortControl;
 }
 
 function renderGrid() {
@@ -519,10 +541,15 @@ function renderGrid() {
   document.getElementById('btn-grid')?.classList.toggle('active', viewMode === 'grid');
   document.getElementById('btn-list')?.classList.toggle('active', viewMode === 'list');
   let list = events;
-  if (filterCat  !== 'Todos') list = list.filter(e => e.cat === filterCat);
-  if (filterYear !== 'Todos') list = list.filter(e => e.date?.startsWith(filterYear));
-  if (filterCompanion.length) {
-    list = list.filter(e => filterCompanion.some(c => getCompanions(e).includes(c)));
+  if (filterUpcoming) {
+    list = list.filter(e => e.date && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 365);
+    list = list.sort((a, b) => (a.date || '') < (b.date || '') ? -1 : 1);
+  } else {
+    if (filterCat  !== 'Todos') list = list.filter(e => e.cat === filterCat);
+    if (filterYear !== 'Todos') list = list.filter(e => e.date?.startsWith(filterYear));
+    if (filterCompanion.length) {
+      list = list.filter(e => filterCompanion.some(c => getCompanions(e).includes(c)));
+    }
   }
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
@@ -539,14 +566,17 @@ function renderGrid() {
   if (!list.length) {
     const isEmpty = events.length === 0;
     const isSearch = !!searchQuery;
+    const isUpcoming = filterUpcoming;
     el.innerHTML = `<div class="empty">
-      <div class="empty-icon">${isEmpty ? '🎭' : isSearch ? '🔍' : CATS[filterCat]?.emoji || '📅'}</div>
-      <h3>${isEmpty ? 'Tu diario está vacío' : isSearch ? 'Sin resultados' : 'Nada aquí todavía'}</h3>
+      <div class="empty-icon">${isEmpty ? '🎭' : isSearch ? '🔍' : isUpcoming ? '🗓' : CATS[filterCat]?.emoji || '📅'}</div>
+      <h3>${isEmpty ? 'Tu diario está vacío' : isSearch ? 'Sin resultados' : isUpcoming ? 'Sin eventos futuros' : 'Nada aquí todavía'}</h3>
       <p>${isEmpty
         ? 'Pulsa <strong>Añadir</strong> para registrar<br>tu primer evento cultural.'
         : isSearch
           ? `No hay eventos que coincidan con "<strong>${searchQuery}</strong>".`
-          : 'Prueba con otro filtro o añade un nuevo evento.'
+          : isUpcoming
+            ? 'Añade eventos con fecha futura para verlos aquí.'
+            : 'Prueba con otro filtro o añade un nuevo evento.'
       }</p>
     </div>`;
     return;
@@ -558,9 +588,14 @@ function renderGrid() {
     const loc   = [ev.venue, ev.city].filter(Boolean).join(' · ');
     const pos   = ev.image_position || '50% 50%';
     const q     = searchQuery;
+    const days = daysUntil(ev.date);
+    const countdown = countdownLabel(days);
+    const countdownHtml = countdown
+      ? `<div class="card-countdown ${countdown.cls}">${countdown.text}</div>`
+      : '';
     const imgHtml = ev.image_url
-      ? `<div class="card-image-wrap"><img src="${ev.image_url}" alt="${escHtml(ev.title)}" loading="lazy" style="object-position:${pos}"/></div>`
-      : `<div class="card-image-wrap card-img-placeholder" style="--cat-color:${cat.color}"><span class="card-img-emoji">${cat.emoji}</span></div>`;
+      ? `<div class="card-image-wrap">${countdownHtml}<img src="${ev.image_url}" alt="${escHtml(ev.title)}" loading="lazy" style="object-position:${pos}"/></div>`
+      : `<div class="card-image-wrap card-img-placeholder" style="--cat-color:${cat.color}">${countdownHtml}<span class="card-img-emoji">${cat.emoji}</span></div>`;
     return `<div class="event-card" style="--cat-color:${cat.color}; animation-delay:${Math.min(i*.05,.3)}s" onclick="openDetail(${ev.id})">
       ${imgHtml}
       <div class="card-body">

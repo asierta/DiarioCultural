@@ -427,7 +427,7 @@ async function saveEvent() {
     maps_url:       document.getElementById('f-maps-url').value.trim(),
     notes:          document.getElementById('f-notes').value.trim(),
     companions:     document.getElementById('f-companions').value.trim(),
-    rating:         formRating,
+    rating:         formRating ? +formRating : null,   // float: requires column type real/numeric in Supabase
     image_url:      imageUrl,
     image_position: imagePosition,
   };

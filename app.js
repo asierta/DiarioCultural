@@ -10,7 +10,7 @@ const CATS = {
   'Otro':       { emoji: '✨', color: 'var(--c-otro)'    },
 };
 
-let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'recent';
+let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'newest';
 let searchQuery = '', formRating = 0, hoverRating = 0, saving = false, editingId = null;
 let viewMode = localStorage.getItem('viewMode') || 'grid';
 let pendingImageFile = null, existingImageUrl = null, removeExistingImage = false;

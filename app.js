@@ -357,30 +357,26 @@ function overlayClick(e) {
 
 function renderStars() {
   const display = hoverRating || formRating;
+  // Two explicit buttons per star: left = N-0.5, right = N
+  // Each is 50% wide with overflow:hidden to show the correct half of the ★ glyph
   document.getElementById('star-input').innerHTML = [1,2,3,4,5].map(i => {
-    const full = display >= i;
-    const half = !full && display >= i - 0.5;
-    const cls  = full ? ' filled' : half ? ' half-filled' : '';
-    const inner = full
-      ? '★'
-      : half
-        ? '<span class="s-half" style="font-size:inherit;vertical-align:top"><span class="s-b">★</span><span class="s-f">★</span></span>'
-        : '☆';
-    return `<button class="star-btn${cls}" onclick="clickStar(event,${i})" onmousemove="hoverStar(event,${i})" onmouseleave="leaveStars()">${inner}</button>`;
+    const lOn = display >= i - 0.5 ? ' on' : '';
+    const rOn = display >= i       ? ' on' : '';
+    return `<span class="sip">` +
+      `<button class="sip-l${lOn}" onclick="clickStarVal(${i-.5})" onmouseenter="hoverStarVal(${i-.5})" onmouseleave="leaveStars()" title="${i-.5} ★"><span>★</span></button>` +
+      `<button class="sip-r${rOn}" onclick="clickStarVal(${i})"   onmouseenter="hoverStarVal(${i})"   onmouseleave="leaveStars()" title="${i} ★"><span>★</span></button>` +
+      `</span>`;
   }).join('');
 }
 
-function clickStar(e, pos) {
-  const rect = e.currentTarget.getBoundingClientRect();
-  const val  = (e.clientX - rect.left) < rect.width / 2 ? pos - 0.5 : pos;
+function clickStarVal(val) {
   formRating = (formRating === val) ? 0 : val;
   hoverRating = 0;
   renderStars();
 }
 
-function hoverStar(e, pos) {
-  const rect = e.currentTarget.getBoundingClientRect();
-  hoverRating = (e.clientX - rect.left) < rect.width / 2 ? pos - 0.5 : pos;
+function hoverStarVal(val) {
+  hoverRating = val;
   renderStars();
 }
 

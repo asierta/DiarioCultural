@@ -492,25 +492,52 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
   display: block; white-space: nowrap;
 }
 
-/* ── Half-star INPUT button ── */
-.stars-wrap { display: flex; gap: 2px; }
-.star-btn {
-  background: none; border: none; font-size: 26px; cursor: pointer;
-  padding: 4px 3px; color: var(--text3);
-  transition: transform .1s;
-  /* Split cursor hint: left half = ½ star */
-  position: relative; user-select: none;
+/* ── Half-star INPUT: two explicit buttons per star ── */
+.stars-wrap { display: flex; gap: 4px; align-items: center; }
+
+/* Each .sip is one star position: two side-by-side half-buttons */
+.sip { display: inline-flex; }
+
+.sip-l, .sip-r {
+  width: 15px;           /* half of ~30px star glyph */
+  height: 36px;
+  overflow: hidden;
+  background: none; border: none;
+  padding: 4px 0; margin: 0;
+  cursor: pointer;
+  color: var(--text3);
+  transition: color .1s, filter .1s;
+  display: flex; align-items: center;
+  user-select: none;
 }
-.star-btn.filled { color: var(--amber-lt); text-shadow: 0 0 12px rgba(228,185,106,.55); }
-.star-btn.half-filled { color: var(--text3); }
-.star-btn.half-filled .s-f { color: var(--amber-lt); text-shadow: 0 0 10px rgba(228,185,106,.5); }
-.star-btn:hover { transform: scale(1.2); }
-/* Subtle left/right zone hint on hover */
-.star-btn::before {
-  content: ''; position: absolute; top: 0; left: 0; width: 50%; height: 100%;
-  border-right: 1px dashed transparent; transition: border-color .15s;
+/* Show only left half of the star glyph */
+.sip-l span {
+  display: block;
+  font-size: 28px;
+  width: 30px;           /* full glyph width */
+  line-height: 1;
+  flex-shrink: 0;
 }
-.star-btn:hover::before { border-color: rgba(201,148,58,.18); }
+/* Show only right half: shift the glyph left by 15px */
+.sip-r span {
+  display: block;
+  font-size: 28px;
+  width: 30px;
+  margin-left: -15px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+/* Active / hover states */
+.sip-l.on, .sip-r.on {
+  color: var(--amber-lt);
+  filter: drop-shadow(0 0 6px rgba(228,185,106,.5));
+}
+/* Gentle scale on the whole pair when hovering */
+.sip:hover .sip-l,
+.sip:hover .sip-r { transform: scale(1.15); }
+
+/* Divider between the two halves — subtle vertical line */
+.sip-l { border-right: 1px solid rgba(255,255,255,.07); }
 
 /* ── Form actions ── */
 .form-actions { display: flex; gap: 8px; margin-top: 1.25rem; }

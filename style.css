@@ -757,6 +757,8 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
   padding: 1px 6px; font-size: 10px; margin-left: 4px;
 }
 .pill-upcoming.active .pill-count { background: rgba(114,184,124,.3); }
+.pill-hide-upcoming { border-color: rgba(180,100,100,.3); color: var(--text3); }
+.pill-hide-upcoming.active { background: rgba(180,100,100,.15); border-color: rgba(180,100,100,.5); color: #f0a0a0; box-shadow: 0 0 10px rgba(180,100,100,.15); }
 .pill-dismiss {
   margin-left: 6px; font-size: 10px;
   opacity: .6; transition: opacity .15s;

@@ -10,7 +10,7 @@ const CATS = {
   'Otro':       { emoji: '✨', color: 'var(--c-otro)'    },
 };
 
-let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'newest', filterUpcoming = false;
+let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'newest', filterUpcoming = false, hideUpcoming = false;
 let searchQuery = '', formRating = 0, hoverRating = 0, saving = false, editingId = null;
 let viewMode = localStorage.getItem('viewMode') || 'grid';
 let pendingImageFile = null, existingImageUrl = null, removeExistingImage = false;
@@ -475,7 +475,8 @@ async function deleteEvent(id) {
 
 // ── Filters ──
 function setFilter(c)           { filterCat = c; filterUpcoming = false; render(); }
-function toggleUpcoming()       { filterUpcoming = !filterUpcoming; if (filterUpcoming) { filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; } render(); }
+function toggleUpcoming()       { filterUpcoming = !filterUpcoming; if (filterUpcoming) { hideUpcoming = false; filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; } render(); }
+function toggleHideUpcoming()   { hideUpcoming = !hideUpcoming; if (hideUpcoming) filterUpcoming = false; render(); }
 function setYear(y)             { filterYear = y; render(); }
 function setCompanionFilter(c)  { const idx = filterCompanion.indexOf(c); if (idx === -1) filterCompanion.push(c); else filterCompanion.splice(idx, 1); render(); }
 function getYears()             { return [...new Set(events.map(e => e.date?.slice(0,4)).filter(Boolean))].sort((a,b) => b-a); }
@@ -509,8 +510,9 @@ function renderFilters() {
   const upcomingCount = events.filter(e => e.date && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 90).length;
   const upcomingPill = upcomingCount > 0
     ? (filterUpcoming
-      ? `<button class="pill pill-upcoming active" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span><span class="pill-dismiss">✕</span></button><div class="filter-divider"></div>`
-      : `<button class="pill pill-upcoming" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span></button><div class="filter-divider"></div>`)
+      ? `<button class="pill pill-upcoming active" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span><span class="pill-dismiss">✕</span></button>`
+      : `<button class="pill pill-upcoming" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span></button>`) +
+    `<button class="pill pill-hide-upcoming${hideUpcoming ? ' active' : ''}" onclick="toggleHideUpcoming()" title="${hideUpcoming ? 'Mostrar todos' : 'Ocultar eventos futuros'}">${hideUpcoming ? '🙈 Futuros ocultos <span class="pill-dismiss">✕</span>' : '🙈 Ocultar futuros'}</button><div class="filter-divider"></div>`
     : '';
   const catPills = ['Todos', ...Object.keys(CATS)].map(c =>
     `<button class="pill${filterCat===c?' active':''}" onclick="setFilter('${c}')">${c==='Todos'?'Todos':CATS[c].emoji+' '+c}</button>`
@@ -547,6 +549,7 @@ function renderGrid() {
     list = list.filter(e => e.date && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 365);
     list = list.sort((a, b) => (a.date || '') < (b.date || '') ? -1 : 1);
   } else {
+    if (hideUpcoming) list = list.filter(e => !e.date || daysUntil(e.date) < 0);
     if (filterCat  !== 'Todos') list = list.filter(e => e.cat === filterCat);
     if (filterYear !== 'Todos') list = list.filter(e => e.date?.startsWith(filterYear));
     if (filterCompanion.length) {

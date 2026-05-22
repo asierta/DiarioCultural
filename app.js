@@ -508,7 +508,9 @@ function renderFilters() {
   const years = getYears();
   const upcomingCount = events.filter(e => e.date && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 90).length;
   const upcomingPill = upcomingCount > 0
-    ? `<button class="pill pill-upcoming${filterUpcoming ? ' active' : ''}" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span></button><div class="filter-divider"></div>`
+    ? (filterUpcoming
+      ? `<button class="pill pill-upcoming active" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span><span class="pill-dismiss">✕</span></button><div class="filter-divider"></div>`
+      : `<button class="pill pill-upcoming" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span></button><div class="filter-divider"></div>`)
     : '';
   const catPills = ['Todos', ...Object.keys(CATS)].map(c =>
     `<button class="pill${filterCat===c?' active':''}" onclick="setFilter('${c}')">${c==='Todos'?'Todos':CATS[c].emoji+' '+c}</button>`
@@ -662,6 +664,187 @@ function closeDetail() {
 
 function detailOverlayClick(e) {
   if (e.target === document.getElementById('detail-overlay')) closeDetail();
+}
+
+
+// ── Venue Map ──────────────────────────────────────────────────────────────
+let venueMap = null, venueMarkers = [], openInfoWindow = null;
+
+const DARK_MAP_STYLES = [
+  { elementType: 'geometry',                      stylers: [{ color: '#0d0c10' }] },
+  { elementType: 'labels.text.stroke',            stylers: [{ color: '#0d0c10' }] },
+  { elementType: 'labels.text.fill',              stylers: [{ color: '#4d4850' }] },
+  { featureType: 'road',  elementType: 'geometry',       stylers: [{ color: '#1c1a1f' }] },
+  { featureType: 'road',  elementType: 'geometry.stroke', stylers: [{ color: '#100f12' }] },
+  { featureType: 'road',  elementType: 'labels.text.fill',stylers: [{ color: '#857e88' }] },
+  { featureType: 'water', elementType: 'geometry',       stylers: [{ color: '#060508' }] },
+  { featureType: 'poi',   elementType: 'geometry',       stylers: [{ color: '#161419' }] },
+  { featureType: 'poi',   elementType: 'labels.text.fill',stylers: [{ color: '#4d4850' }] },
+  { featureType: 'poi.park', elementType: 'geometry',    stylers: [{ color: '#0e0c11' }] },
+  { featureType: 'transit',  elementType: 'geometry',    stylers: [{ color: '#1c1a1f' }] },
+  { featureType: 'administrative', elementType: 'geometry',       stylers: [{ color: '#161419' }] },
+  { featureType: 'administrative', elementType: 'labels.text.fill',stylers: [{ color: '#857e88' }] },
+];
+
+function openMap() {
+  document.getElementById('map-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  if (!venueMap) setTimeout(initVenueMap, 120);
+  else refreshVenueMarkers();
+}
+
+function closeMap() {
+  document.getElementById('map-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function coordsFromMapsUrl(url) {
+  if (!url) return null;
+  const m = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } : null;
+}
+
+function buildVenueData() {
+  const seen = new Map();
+  events.forEach(ev => {
+    const coords = coordsFromMapsUrl(ev.maps_url);
+    if (!coords) return;
+    const key = (ev.venue || '') + '||' + (ev.city || '');
+    if (!seen.has(key)) {
+      seen.set(key, { name: ev.venue || ev.city || 'Lugar', city: ev.city, coords, maps_url: ev.maps_url, events: [] });
+    }
+    seen.get(key).events.push(ev);
+  });
+  return [...seen.values()];
+}
+
+function initVenueMap() {
+  if (!window.google?.maps) { setTimeout(initVenueMap, 400); return; }
+  const el = document.getElementById('map-canvas');
+  venueMap = new google.maps.Map(el, {
+    zoom: 6,
+    center: { lat: 40.4168, lng: -3.7038 },
+    styles: DARK_MAP_STYLES,
+    zoomControl: true,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    gestureHandling: 'greedy',
+  });
+  refreshVenueMarkers();
+}
+
+function markerSvg(emoji, count) {
+  const badge = count > 1
+    ? `<circle cx="30" cy="8" r="8" fill="#c9943a"/><text x="30" y="12" text-anchor="middle" font-size="9" fill="#1a1000" font-weight="bold" font-family="system-ui">${count > 99 ? '99+' : count}</text>`
+    : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48" viewBox="0 0 40 48">
+    <filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,.6)"/></filter>
+    <g filter="url(#s)">
+      <circle cx="20" cy="19" r="17" fill="#100f12" stroke="rgba(201,148,58,.85)" stroke-width="2"/>
+      <text x="20" y="25" text-anchor="middle" font-size="15">${emoji}</text>
+      <path d="M13 33 Q20 48 27 33" fill="#100f12" stroke="rgba(201,148,58,.85)" stroke-width="1.5"/>
+    </g>
+    ${badge}
+  </svg>`;
+}
+
+function buildInfoWindowHtml(v) {
+  const rows = v.events.slice(0, 5).map(ev =>
+    `<div class="iw-row">
+      <span class="iw-emoji">${CATS[ev.cat]?.emoji || ''}</span>
+      <span class="iw-title">${escHtml(ev.title)}</span>
+      ${ev.date    ? `<span class="iw-date">${fmtDate(ev.date)}</span>` : ''}
+      ${ev.rating  ? `<span class="iw-stars">${'★'.repeat(Math.floor(ev.rating))}</span>` : ''}
+    </div>`
+  ).join('');
+  const more = v.events.length > 5 ? `<div class="iw-more">+ ${v.events.length - 5} más</div>` : '';
+  const link = v.maps_url ? `<a class="iw-link" href="${v.maps_url}" target="_blank" rel="noopener">Ver en Google Maps →</a>` : '';
+  return `<div class="map-iw">
+    <div class="iw-name">${escHtml(v.name)}</div>
+    ${v.city ? `<div class="iw-city">📍 ${escHtml(v.city)}</div>` : ''}
+    <div class="iw-events">${rows}${more}</div>
+    ${link}
+  </div>`;
+}
+
+function refreshVenueMarkers() {
+  venueMarkers.forEach(m => m.setMap(null));
+  venueMarkers = [];
+  if (openInfoWindow) { openInfoWindow.close(); openInfoWindow = null; }
+
+  const venues = buildVenueData();
+  renderMapSidebar(venues);
+  if (!venues.length || !venueMap) return;
+
+  const bounds = new google.maps.LatLngBounds();
+
+  venues.forEach(v => {
+    const pos = new google.maps.LatLng(v.coords.lat, v.coords.lng);
+    bounds.extend(pos);
+
+    const topCat = Object.entries(
+      v.events.reduce((acc, ev) => { acc[ev.cat] = (acc[ev.cat]||0)+1; return acc; }, {})
+    ).sort((a,b) => b[1]-a[1])[0]?.[0] || 'Otro';
+
+    const marker = new google.maps.Marker({
+      position: pos,
+      map: venueMap,
+      title: v.name,
+      icon: {
+        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(markerSvg(CATS[topCat]?.emoji || '✨', v.events.length)),
+        scaledSize: new google.maps.Size(40, 48),
+        anchor: new google.maps.Point(20, 48),
+      },
+    });
+
+    const iw = new google.maps.InfoWindow({
+      content: buildInfoWindowHtml(v),
+      disableAutoPan: false,
+    });
+
+    marker.addListener('click', () => {
+      if (openInfoWindow) openInfoWindow.close();
+      iw.open(venueMap, marker);
+      openInfoWindow = iw;
+    });
+
+    venueMarkers.push(marker);
+  });
+
+  if (venues.length === 1) {
+    venueMap.setCenter(venues[0].coords);
+    venueMap.setZoom(14);
+  } else {
+    venueMap.fitBounds(bounds, { top: 60, right: 20, bottom: 60, left: 20 });
+  }
+}
+
+function renderMapSidebar(venues) {
+  const cities      = new Set(venues.map(v => v.city).filter(Boolean)).size;
+  const totalEvents = venues.reduce((s, v) => s + v.events.length, 0);
+  const noMap       = events.filter(ev => !coordsFromMapsUrl(ev.maps_url) && (ev.venue || ev.city));
+
+  document.getElementById('map-sidebar').innerHTML = `
+    <div class="mapsb-stats">
+      <div class="mapsb-stat"><div class="mapsb-n">${venues.length}</div><div class="mapsb-l">Locales</div></div>
+      <div class="mapsb-stat"><div class="mapsb-n">${cities}</div><div class="mapsb-l">Ciudades</div></div>
+      <div class="mapsb-stat"><div class="mapsb-n">${totalEvents}</div><div class="mapsb-l">Eventos</div></div>
+    </div>
+    ${noMap.length ? `
+    <div class="mapsb-missing">
+      <div class="mapsb-missing-title">Sin ubicación (${noMap.length})</div>
+      ${noMap.map(ev => `
+        <div class="mapsb-row">
+          <span>${CATS[ev.cat]?.emoji || ''}</span>
+          <span class="mapsb-ev-title">${escHtml(ev.title)}</span>
+          ${ev.city ? `<span class="mapsb-ev-city">${escHtml(ev.city)}</span>` : ''}
+        </div>`).join('')}
+    </div>` : ''}
+    ${!venues.length ? `<div class="mapsb-empty">
+      <p>Ningún evento tiene enlace de mapa.<br>Al añadir un evento, busca el local en el campo <em>Lugar</em> para que aparezca aquí.</p>
+    </div>` : ''}
+  `;
 }
 
 // ── Google Places ──
@@ -1178,11 +1361,102 @@ function renderStatsPanel() {
       </div>
     </div>` : ''}
   `;
+  // Comparativa entre años (solo en modo "Todos")
+  if (statsYear === 'Todos') {
+    const years = getYears();
+    if (years.length >= 2) content.innerHTML += renderYearComparison(years);
+  }
+
   // Botón "Año en imágenes"
   const targetYear = statsYear !== 'Todos' ? statsYear : getYears()[0];
   if (targetYear) {
     content.innerHTML += `<button class="btn-wrapped" onclick="closeStats();openWrapped('${targetYear}')">🎞 Ver ${targetYear} en imágenes</button>`;
   }
+
+  // Exportar
+  content.innerHTML += `
+    <div class="export-section">
+      <div class="export-title">Exportar</div>
+      <div class="export-btns">
+        <button class="export-btn" onclick="exportCSV()">
+          <span class="export-icon">📊</span>
+          <span class="export-label">CSV</span>
+          <span class="export-sub">Excel / Sheets</span>
+        </button>
+        <button class="export-btn" onclick="exportPDF()">
+          <span class="export-icon">📄</span>
+          <span class="export-label">PDF</span>
+          <span class="export-sub">Imprimir / Guardar</span>
+        </button>
+      </div>
+    </div>`;
+}
+
+
+function renderYearComparison(years) {
+  if (years.length < 2) return '';
+  const yData = years.slice(0, 5).reverse().map(y => {  // max 5 años, cronológico
+    const evts   = events.filter(e => e.date?.startsWith(y));
+    const rated  = evts.filter(e => e.rating > 0);
+    const avg    = rated.length ? +(rated.reduce((s,e) => s + e.rating, 0) / rated.length).toFixed(1) : 0;
+    const months = new Set(evts.map(e => e.date?.slice(0,7)).filter(Boolean)).size;
+    const topCat = Object.keys(CATS)
+      .map(c => ({ c, n: evts.filter(e => e.cat === c).length }))
+      .sort((a,b) => b.n - a.n)[0];
+    return { y, total: evts.length, avg, months, emoji: topCat?.n > 0 ? CATS[topCat.c].emoji : '—' };
+  });
+
+  const maxTotal = Math.max(...yData.map(d => d.total), 1);
+  const maxAvg   = 5;
+
+  const chart = svgYearChart(yData, maxTotal);
+
+  const rows = yData.map(d => `
+    <div class="yc-row">
+      <div class="yc-year">${d.y}</div>
+      <div class="yc-bar-wrap">
+        <div class="yc-bar" style="width:${(d.total/maxTotal*100).toFixed(1)}%"></div>
+      </div>
+      <div class="yc-total">${d.total}</div>
+      <div class="yc-avg">${d.avg > 0 ? d.avg + ' ★' : '—'}</div>
+      <div class="yc-cat">${d.emoji}</div>
+      <div class="yc-months">${d.months}m</div>
+    </div>`).join('');
+
+  return `
+    <div class="stats-section">
+      <div class="stats-section-title">Comparativa entre años</div>
+      <div class="chart-wrap" style="margin-bottom:.75rem">${chart}</div>
+      <div class="yc-header">
+        <div class="yc-year"></div>
+        <div class="yc-bar-wrap"></div>
+        <div class="yc-total yc-lbl">Eventos</div>
+        <div class="yc-avg yc-lbl">Media ★</div>
+        <div class="yc-cat yc-lbl">Top</div>
+        <div class="yc-months yc-lbl">Meses</div>
+      </div>
+      ${rows}
+    </div>`;
+}
+
+function svgYearChart(yData, maxVal) {
+  const n = yData.length;
+  const slotW = Math.min(72, 320 / n), barW = slotW * .55;
+  const topPad = 18, maxBarH = 70, lblH = 18;
+  const W = n * slotW + 10, H = topPad + maxBarH + lblH;
+
+  const bars = yData.map((d, i) => {
+    const x  = i * slotW + (slotW - barW) / 2;
+    const bh = d.total > 0 ? Math.max(Math.round(d.total / maxVal * maxBarH), 4) : 0;
+    const by = topPad + maxBarH - bh;
+    return [
+      `<rect x="${x}" y="${by}" width="${barW}" height="${bh}" fill="var(--amber)" rx="3" opacity=".72"/>`,
+      d.total > 0 ? `<text x="${x+barW/2}" y="${by-4}" text-anchor="middle" font-size="9" fill="var(--amber-lt)" font-family="system-ui">${d.total}</text>` : '',
+      `<text x="${x+barW/2}" y="${H-2}" text-anchor="middle" font-size="9" fill="var(--text3)" font-family="system-ui">${d.y}</text>`,
+    ].join('');
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W*2}px;height:auto;display:block">${bars}</svg>`;
 }
 
 function svgBarChart(months, maxVal) {
@@ -1201,6 +1475,78 @@ function svgBarChart(months, maxVal) {
   }).join('');
 
   return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">${bars}</svg>`;
+}
+
+
+// ── Export ──
+function exportCSV() {
+  const cols    = ['title','date','cat','venue','city','address','rating','companions','notes','maps_url'];
+  const headers = ['Título','Fecha','Categoría','Lugar','Ciudad','Dirección','Valoración','Acompañantes','Notas','Mapa'];
+  const esc     = v => `"${(v ?? '').toString().replace(/"/g,'""')}"`;
+  const csv     = [headers.map(esc).join(','), ...events.map(ev => cols.map(c => esc(ev[c])).join(','))].join('\n');
+  const blob    = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url     = URL.createObjectURL(blob);
+  const a       = Object.assign(document.createElement('a'), { href: url, download: `diario-cultural-${new Date().toISOString().slice(0,10)}.csv` });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('✓ CSV exportado');
+}
+
+function exportPDF() {
+  const win = window.open('', '_blank');
+  if (!win) { toast('Permite ventanas emergentes para exportar', true); return; }
+  const sorted = [...events].sort((a,b) => (b.date||'') < (a.date||'') ? 1 : -1);
+  win.document.write(buildPrintHTML(sorted));
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 600);
+}
+
+function buildPrintHTML(list) {
+  const starsStr = r => {
+    if (!r) return '';
+    let s = '';
+    for (let i = 1; i <= 5; i++) s += r >= i ? '★' : r >= i-.5 ? '½' : '☆';
+    return s;
+  };
+  const rows = list.map(ev => {
+    const loc   = [ev.venue, ev.city].filter(Boolean).join(', ');
+    const meta  = [ev.date ? fmtDate(ev.date) : '', loc, ev.companions ? '👥 ' + ev.companions : ''].filter(Boolean).join('  ·  ');
+    return `<div class="ev">
+      <div class="ev-header">
+        <span class="ev-cat">${CATS[ev.cat]?.emoji || ''} ${ev.cat || ''}</span>
+        ${ev.rating ? `<span class="ev-stars">${starsStr(ev.rating)}</span>` : ''}
+      </div>
+      <div class="ev-title">${escHtml(ev.title)}</div>
+      ${meta ? `<div class="ev-meta">${escHtml(meta)}</div>` : ''}
+      ${ev.notes ? `<div class="ev-notes">${escHtml(ev.notes)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<title>Diario Cultural</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Georgia, 'Times New Roman', serif; color: #1a1a1a; background: #fff; padding: 48px; }
+  .page-header { text-align: center; padding-bottom: 28px; border-bottom: 2px solid #1a1a1a; margin-bottom: 36px; }
+  .page-header h1 { font-size: 38px; font-weight: 300; font-style: italic; letter-spacing: -1px; }
+  .page-header h1 em { color: #c9943a; }
+  .page-header p { color: #888; font-size: 13px; margin-top: 6px; font-family: system-ui; }
+  .ev { padding: 18px 0; border-bottom: 1px solid #eee; break-inside: avoid; page-break-inside: avoid; }
+  .ev-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .ev-cat { font-family: system-ui; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #999; }
+  .ev-stars { font-size: 13px; color: #c9943a; letter-spacing: 2px; }
+  .ev-title { font-size: 22px; font-weight: 300; font-style: italic; line-height: 1.2; margin-bottom: 5px; }
+  .ev-meta { font-family: system-ui; font-size: 12px; color: #777; margin-bottom: 6px; }
+  .ev-notes { font-size: 13px; color: #555; line-height: 1.65; font-style: italic; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #eee; }
+  @media print { body { padding: 28px; } @page { margin: 1.5cm; } }
+</style></head><body>
+  <div class="page-header">
+    <h1>Diario <em>Cultural</em></h1>
+    <p>${list.length} eventos · Exportado el ${new Date().toLocaleDateString('es-ES', {day:'numeric', month:'long', year:'numeric'})}</p>
+  </div>
+  ${rows}
+</body></html>`;
 }
 
 // ── Init ──

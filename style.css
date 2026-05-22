@@ -757,6 +757,11 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
   padding: 1px 6px; font-size: 10px; margin-left: 4px;
 }
 .pill-upcoming.active .pill-count { background: rgba(114,184,124,.3); }
+.pill-dismiss {
+  margin-left: 6px; font-size: 10px;
+  opacity: .6; transition: opacity .15s;
+}
+.pill-upcoming.active:hover .pill-dismiss { opacity: 1; }
 
 /* Badge de cuenta atrás sobre la imagen */
 .card-countdown {
@@ -939,3 +944,184 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
 .ws-cta { font-size: 11px; color: rgba(255,255,255,.25); letter-spacing: 2px; text-transform: uppercase; margin-top: 1rem; animation: fadeUp .4s .5s ease both; }
 
 @keyframes wsIn { from { opacity: 0; transform: scale(.96) translateY(14px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+/* ════════════════════════════════════════
+   EXPORTAR & COMPARATIVA AÑOS
+   ════════════════════════════════════════ */
+
+/* Export buttons */
+.export-section {
+  background: rgba(22,20,25,.65);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: var(--r); padding: 1rem 1.1rem;
+}
+.export-title {
+  font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--text3); margin-bottom: .85rem; font-weight: 500;
+}
+.export-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.export-btn {
+  background: rgba(28,26,31,.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border2);
+  border-radius: var(--r-sm);
+  padding: 14px 10px 12px;
+  cursor: pointer; transition: all .18s;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  text-align: center;
+}
+.export-btn:hover { border-color: var(--amber); background: rgba(201,148,58,.07); }
+.export-icon  { font-size: 22px; line-height: 1; }
+.export-label { font-size: 14px; font-weight: 500; color: var(--text); font-family: var(--ui); }
+.export-sub   { font-size: 10px; color: var(--text3); font-family: var(--ui); }
+
+/* Year comparison */
+.yc-header, .yc-row {
+  display: grid;
+  grid-template-columns: 38px 1fr 44px 52px 26px 30px;
+  align-items: center; gap: 8px;
+  padding: 5px 0;
+}
+.yc-row { border-top: 1px solid var(--border); }
+.yc-row:first-of-type { border-top: none; }
+.yc-year  { font-size: 13px; font-weight: 500; color: var(--text2); font-family: var(--ui); }
+.yc-lbl   { font-size: 9px; letter-spacing: .5px; text-transform: uppercase; color: var(--text3); }
+.yc-total { font-size: 13px; color: var(--amber-lt); text-align: right;
+            text-shadow: 0 0 10px rgba(228,185,106,.3); font-family: var(--serif); }
+.yc-avg   { font-size: 11px; color: var(--text3); text-align: right; white-space: nowrap; }
+.yc-cat   { font-size: 14px; text-align: center; }
+.yc-months{ font-size: 11px; color: var(--text3); text-align: right; }
+.yc-bar-wrap { height: 5px; background: rgba(28,26,31,.8); border-radius: 3px; overflow: hidden; }
+.yc-bar { height: 100%; background: var(--amber); border-radius: 3px; opacity: .75;
+          transition: width .6s cubic-bezier(.4,0,.2,1); }
+
+
+/* ════════════════════════════════════════
+   MAPA DE VENUES
+   ════════════════════════════════════════ */
+
+#map-btn {
+  background: none; border: 1px solid var(--border2); border-radius: 20px;
+  padding: 6px 10px; font-size: 15px; cursor: pointer; line-height: 1;
+  transition: border-color .15s;
+}
+#map-btn:hover { border-color: var(--text3); }
+
+.map-overlay {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  display: none; align-items: flex-end; justify-content: center;
+}
+.map-overlay.open { display: flex; animation: overlayIn .25s ease both; }
+
+.map-panel {
+  background: rgba(14,12,18,.95);
+  border-radius: 22px 22px 0 0;
+  border: 1px solid rgba(255,255,255,.1);
+  border-bottom: none;
+  width: 100%; max-width: 900px;
+  height: 92vh;
+  display: flex; flex-direction: column;
+  animation: sheetUp .3s cubic-bezier(.34,1.56,.64,1);
+  box-shadow: 0 -12px 60px rgba(0,0,0,.6);
+  overflow: hidden;
+}
+
+.map-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 1.1rem 1.5rem .9rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.map-eyebrow { font-size: 9px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--text3); margin-bottom: .2rem; }
+.map-title   { font-family: var(--serif); font-size: 22px; font-weight: 300; color: var(--text); }
+.map-title em { font-style: italic; color: var(--amber-lt); }
+.map-close {
+  background: rgba(28,26,31,.8); border: 1px solid var(--border2); border-radius: 50%;
+  width: 30px; height: 30px; color: var(--text3); font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all .15s; flex-shrink: 0;
+}
+.map-close:hover { color: var(--text); border-color: var(--text3); }
+
+/* Map + sidebar layout */
+.map-body {
+  display: flex; flex: 1; overflow: hidden;
+}
+.map-canvas {
+  flex: 1; min-width: 0;
+}
+
+/* Sidebar */
+.map-sidebar {
+  width: 220px; flex-shrink: 0;
+  overflow-y: auto; scrollbar-width: none;
+  border-left: 1px solid var(--border);
+  background: rgba(10,9,13,.5);
+  padding: .75rem;
+}
+.map-sidebar::-webkit-scrollbar { display: none; }
+
+@media (max-width: 600px) {
+  .map-body { flex-direction: column; }
+  .map-canvas { flex: 1; min-height: 0; }
+  .map-sidebar { width: 100%; height: 160px; border-left: none; border-top: 1px solid var(--border); overflow-x: auto; }
+}
+
+/* Sidebar content */
+.mapsb-stats {
+  display: grid; grid-template-columns: repeat(3,1fr);
+  gap: 1px; background: var(--border);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  overflow: hidden; margin-bottom: .75rem;
+}
+.mapsb-stat { background: rgba(22,20,25,.8); padding: .6rem .25rem; text-align: center; }
+.mapsb-n    { font-family: var(--serif); font-size: 22px; font-weight: 300; color: var(--amber-lt); line-height: 1;
+              text-shadow: 0 0 12px rgba(228,185,106,.4); }
+.mapsb-l    { font-size: 8px; letter-spacing: .5px; text-transform: uppercase; color: var(--text3); margin-top: 3px; }
+
+.mapsb-missing { margin-top: .5rem; }
+.mapsb-missing-title {
+  font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--text3); margin-bottom: .5rem; padding-bottom: .4rem;
+  border-bottom: 1px solid var(--border);
+}
+.mapsb-row {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 5px 0; border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.mapsb-ev-title { color: var(--text2); font-family: var(--serif); font-style: italic; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mapsb-ev-city  { font-size: 10px; color: var(--text3); flex-shrink: 0; }
+
+.mapsb-empty { padding: 1.5rem .5rem; text-align: center; }
+.mapsb-empty p { font-size: 12px; color: var(--text3); line-height: 1.7; }
+.mapsb-empty em { color: var(--amber); }
+
+/* Google Maps InfoWindow dark theme */
+.gm-style .gm-style-iw-c {
+  background: #100f12 !important;
+  border: 1px solid rgba(255,255,255,.1) !important;
+  border-radius: 12px !important;
+  padding: 0 !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,.6) !important;
+}
+.gm-style .gm-style-iw-d { overflow: hidden !important; }
+.gm-style .gm-style-iw-t::after { background: #100f12 !important; }
+.gm-style .gm-ui-hover-effect { filter: invert(1) !important; opacity: .5 !important; }
+
+.map-iw { padding: 14px; min-width: 200px; max-width: 260px; }
+.iw-name { font-family: var(--serif); font-size: 17px; font-style: italic; color: #eee8df; margin-bottom: 2px; }
+.iw-city { font-size: 11px; color: #4d4850; margin-bottom: 10px; }
+.iw-events { display: flex; flex-direction: column; gap: 0; }
+.iw-row    { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.06); display: flex; align-items: baseline; gap: 6px; }
+.iw-emoji  { font-size: 12px; flex-shrink: 0; }
+.iw-title  { font-size: 12px; color: #eee8df; font-style: italic; flex: 1; }
+.iw-date   { font-size: 10px; color: #4d4850; white-space: nowrap; }
+.iw-stars  { font-size: 10px; color: #e4b96a; white-space: nowrap; }
+.iw-more   { font-size: 11px; color: #4d4850; padding-top: 5px; }
+.iw-link   { display: inline-block; margin-top: 10px; font-size: 11px; color: #c9943a; text-decoration: none; }
+.iw-link:hover { color: #e4b96a; }
+

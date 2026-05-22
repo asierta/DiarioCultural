@@ -47,6 +47,7 @@
   </div>
   <div class="header-actions">
     <button id="add-btn" onclick="openForm()">＋ Añadir</button>
+    <button id="map-btn"   onclick="openMap()"   title="Mapa de venues">🗺</button>
     <button id="stats-btn" onclick="openStats()" title="Estadísticas">📊</button>
     <button id="logout-btn" onclick="doLogout()">↩ Salir</button>
   </div>
@@ -196,6 +197,23 @@
 <!-- Detail view -->
 <div id="detail-overlay" class="detail-overlay" onclick="detailOverlayClick(event)">
   <div class="detail-panel" id="detail-panel"></div>
+</div>
+
+<!-- Map overlay -->
+<div id="map-overlay" class="map-overlay">
+  <div class="map-panel">
+    <div class="map-header">
+      <div>
+        <div class="map-eyebrow">tu recorrido cultural</div>
+        <h2 class="map-title">Mapa de <em>venues</em></h2>
+      </div>
+      <button class="map-close" onclick="closeMap()">✕</button>
+    </div>
+    <div class="map-body">
+      <div id="map-canvas" class="map-canvas"></div>
+      <div id="map-sidebar" class="map-sidebar"></div>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>

@@ -614,7 +614,7 @@ function renderGrid() {
           </div>
         </div>
         <div class="card-title">${highlight(ev.title, q)}</div>
-        ${loc ? `<div class="card-meta">📍 ${highlight(loc, q)}${ev.maps_url ? ` <a href="${ev.maps_url}" target="_blank" rel="noopener">🗺</a>` : ''}</div>` : ''}
+        ${loc ? `<div class="card-meta">${ev.maps_url ? `<a href="${ev.maps_url}" target="_blank" rel="noopener" class="card-pin-link" onclick="event.stopPropagation()">📍</a>` : '📍'} ${highlight(loc, q)}</div>` : ''}
         ${ev.date ? `<div class="card-meta">📅 ${fmtDate(ev.date)}</div>` : ''}
         ${stars ? `<div class="card-stars stars-row">${stars}</div>` : ''}
         ${ev.companions ? `<div class="card-companions">${getCompanions(ev).map(c=>`<span class="companion-tag${filterCompanion.includes(c)?' companion-active':''}" onclick="event.stopPropagation();setCompanionFilter('${c.replace(/'/g, "\\'")}')">${escHtml(c)}</span>`).join('')}</div>` : ''}
@@ -673,19 +673,27 @@ function detailOverlayClick(e) {
 // ── Venue Map ──────────────────────────────────────────────────────────────
 let venueMap = null, venueMarkers = [], openInfoWindow = null;
 
+// Geocode cache — persisted in localStorage so we don't repeat requests
+const GEO_CACHE_KEY = 'dc_geocache_v2';   // v2: now uses Nominatim
+let geoCache = {};
+try { geoCache = JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || '{}'); } catch(_) {}
+function saveGeoCache() { try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(geoCache)); } catch(_) {} }
+function clearGeoCache() { geoCache = {}; localStorage.removeItem(GEO_CACHE_KEY); toast('Caché de mapa borrada — reabriendo…'); setTimeout(refreshVenueMarkers, 400); }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 const DARK_MAP_STYLES = [
-  { elementType: 'geometry',                      stylers: [{ color: '#0d0c10' }] },
-  { elementType: 'labels.text.stroke',            stylers: [{ color: '#0d0c10' }] },
-  { elementType: 'labels.text.fill',              stylers: [{ color: '#4d4850' }] },
-  { featureType: 'road',  elementType: 'geometry',       stylers: [{ color: '#1c1a1f' }] },
-  { featureType: 'road',  elementType: 'geometry.stroke', stylers: [{ color: '#100f12' }] },
-  { featureType: 'road',  elementType: 'labels.text.fill',stylers: [{ color: '#857e88' }] },
-  { featureType: 'water', elementType: 'geometry',       stylers: [{ color: '#060508' }] },
-  { featureType: 'poi',   elementType: 'geometry',       stylers: [{ color: '#161419' }] },
+  { elementType: 'geometry',                       stylers: [{ color: '#0d0c10' }] },
+  { elementType: 'labels.text.stroke',             stylers: [{ color: '#0d0c10' }] },
+  { elementType: 'labels.text.fill',               stylers: [{ color: '#4d4850' }] },
+  { featureType: 'road',  elementType: 'geometry',        stylers: [{ color: '#1c1a1f' }] },
+  { featureType: 'road',  elementType: 'geometry.stroke',  stylers: [{ color: '#100f12' }] },
+  { featureType: 'road',  elementType: 'labels.text.fill', stylers: [{ color: '#857e88' }] },
+  { featureType: 'water', elementType: 'geometry',        stylers: [{ color: '#060508' }] },
+  { featureType: 'poi',   elementType: 'geometry',        stylers: [{ color: '#161419' }] },
   { featureType: 'poi',   elementType: 'labels.text.fill',stylers: [{ color: '#4d4850' }] },
-  { featureType: 'poi.park', elementType: 'geometry',    stylers: [{ color: '#0e0c11' }] },
-  { featureType: 'transit',  elementType: 'geometry',    stylers: [{ color: '#1c1a1f' }] },
-  { featureType: 'administrative', elementType: 'geometry',       stylers: [{ color: '#161419' }] },
+  { featureType: 'poi.park',    elementType: 'geometry',  stylers: [{ color: '#0e0c11' }] },
+  { featureType: 'transit',     elementType: 'geometry',  stylers: [{ color: '#1c1a1f' }] },
+  { featureType: 'administrative', elementType: 'geometry',        stylers: [{ color: '#161419' }] },
   { featureType: 'administrative', elementType: 'labels.text.fill',stylers: [{ color: '#857e88' }] },
 ];
 
@@ -701,23 +709,96 @@ function closeMap() {
   document.body.style.overflow = '';
 }
 
+// Try to extract coords from Google Maps URL (works for URLs with /@lat,lng format)
 function coordsFromMapsUrl(url) {
   if (!url) return null;
   const m = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
   return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } : null;
 }
 
-function buildVenueData() {
+// ── Geocoding: tries Google Maps first, falls back to Nominatim (OSM) ──
+
+function tryGoogleGeocode(query) {
+  return new Promise(resolve => {
+    if (!window.google?.maps?.Geocoder) { resolve(null); return; }
+    new google.maps.Geocoder().geocode({ address: query }, (results, status) => {
+      resolve(status === 'OK' && results[0]
+        ? { lat: results[0].geometry.location.lat(), lng: results[0].geometry.location.lng() }
+        : null);
+    });
+  });
+}
+
+async function tryNominatimGeocode(query) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&accept-language=es`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch(_) {}
+  return null;
+}
+
+async function geocodeVenue(venue, city, address) {
+  const key = `${venue || ''}||${city || ''}`;
+  if (geoCache[key]) return geoCache[key];  // skip null cache → allow retry
+
+  let pos = null;
+
+  // Strategy 1: Google Maps Geocoder (venue + city)
+  const gcQuery = [venue, city].filter(Boolean).join(', ');
+  if (gcQuery) pos = await tryGoogleGeocode(gcQuery);
+
+  // Strategy 2: Google Maps Geocoder (full address)
+  if (!pos && address) pos = await tryGoogleGeocode(address);
+
+  // Strategy 3: Nominatim with full address (rate-limit: 1 req/sec)
+  if (!pos && address) {
+    await sleep(1100);
+    pos = await tryNominatimGeocode(address);
+  }
+
+  // Strategy 4: Nominatim with venue + city
+  if (!pos && gcQuery) {
+    await sleep(1100);
+    pos = await tryNominatimGeocode(gcQuery);
+  }
+
+  geoCache[key] = pos;
+  saveGeoCache();
+  return pos;
+}
+
+// Build venue list — groups events by venue+city, geocodes those without URL coords
+async function buildVenueData() {
   const seen = new Map();
   events.forEach(ev => {
-    const coords = coordsFromMapsUrl(ev.maps_url);
-    if (!coords) return;
+    if (!ev.venue && !ev.city) return;
     const key = (ev.venue || '') + '||' + (ev.city || '');
     if (!seen.has(key)) {
-      seen.set(key, { name: ev.venue || ev.city || 'Lugar', city: ev.city, coords, maps_url: ev.maps_url, events: [] });
+      seen.set(key, {
+        name: ev.venue || ev.city || 'Lugar',
+        venue:   ev.venue   || '',
+        city:    ev.city    || '',
+        address: ev.address || '',
+        coords:   coordsFromMapsUrl(ev.maps_url),
+        maps_url: ev.maps_url,
+        events: [],
+      });
     }
-    seen.get(key).events.push(ev);
+    const entry = seen.get(key);
+    entry.events.push(ev);
+    if (!entry.coords) entry.coords = coordsFromMapsUrl(ev.maps_url);
   });
+
+  // Geocode venues whose URL didn't contain coordinates (sequential to respect rate limits)
+  const needsGeo = [...seen.values()].filter(v => !v.coords);
+  if (needsGeo.length) {
+    for (const v of needsGeo) {
+      v.coords = await geocodeVenue(v.venue, v.city, v.address);
+    }
+  }
+
   return [...seen.values()];
 }
 
@@ -757,8 +838,8 @@ function buildInfoWindowHtml(v) {
     `<div class="iw-row">
       <span class="iw-emoji">${CATS[ev.cat]?.emoji || ''}</span>
       <span class="iw-title">${escHtml(ev.title)}</span>
-      ${ev.date    ? `<span class="iw-date">${fmtDate(ev.date)}</span>` : ''}
-      ${ev.rating  ? `<span class="iw-stars">${'★'.repeat(Math.floor(ev.rating))}</span>` : ''}
+      ${ev.date   ? `<span class="iw-date">${fmtDate(ev.date)}</span>` : ''}
+      ${ev.rating ? `<span class="iw-stars">${'★'.repeat(Math.floor(ev.rating))}</span>` : ''}
     </div>`
   ).join('');
   const more = v.events.length > 5 ? `<div class="iw-more">+ ${v.events.length - 5} más</div>` : '';
@@ -771,13 +852,25 @@ function buildInfoWindowHtml(v) {
   </div>`;
 }
 
-function refreshVenueMarkers() {
+async function refreshVenueMarkers() {
   venueMarkers.forEach(m => m.setMap(null));
   venueMarkers = [];
   if (openInfoWindow) { openInfoWindow.close(); openInfoWindow = null; }
 
-  const venues = buildVenueData();
-  renderMapSidebar(venues);
+  // Show loading while geocoding
+  const loadingEl = document.getElementById('map-loading');
+  if (loadingEl) {
+    loadingEl.style.display = 'flex';
+    loadingEl.innerHTML = '<div class="spinner"></div>&nbsp; Localizando venues…';
+  }
+
+  const allVenues = await buildVenueData();
+  const venues    = allVenues.filter(v => v.coords);
+  const noCoords  = allVenues.filter(v => !v.coords);
+
+  if (loadingEl) loadingEl.style.display = 'none';
+
+  renderMapSidebar(venues, noCoords);
   if (!venues.length || !venueMap) return;
 
   const bounds = new google.maps.LatLngBounds();
@@ -787,8 +880,8 @@ function refreshVenueMarkers() {
     bounds.extend(pos);
 
     const topCat = Object.entries(
-      v.events.reduce((acc, ev) => { acc[ev.cat] = (acc[ev.cat]||0)+1; return acc; }, {})
-    ).sort((a,b) => b[1]-a[1])[0]?.[0] || 'Otro';
+      v.events.reduce((acc, ev) => { acc[ev.cat] = (acc[ev.cat] || 0) + 1; return acc; }, {})
+    ).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Otro';
 
     const marker = new google.maps.Marker({
       position: pos,
@@ -797,15 +890,11 @@ function refreshVenueMarkers() {
       icon: {
         url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(markerSvg(CATS[topCat]?.emoji || '✨', v.events.length)),
         scaledSize: new google.maps.Size(40, 48),
-        anchor: new google.maps.Point(20, 48),
+        anchor:     new google.maps.Point(20, 48),
       },
     });
 
-    const iw = new google.maps.InfoWindow({
-      content: buildInfoWindowHtml(v),
-      disableAutoPan: false,
-    });
-
+    const iw = new google.maps.InfoWindow({ content: buildInfoWindowHtml(v) });
     marker.addListener('click', () => {
       if (openInfoWindow) openInfoWindow.close();
       iw.open(venueMap, marker);
@@ -823,31 +912,42 @@ function refreshVenueMarkers() {
   }
 }
 
-function renderMapSidebar(venues) {
+function renderMapSidebar(venues, noCoords) {
   const cities      = new Set(venues.map(v => v.city).filter(Boolean)).size;
   const totalEvents = venues.reduce((s, v) => s + v.events.length, 0);
-  const noMap       = events.filter(ev => !coordsFromMapsUrl(ev.maps_url) && (ev.venue || ev.city));
 
-  document.getElementById('map-sidebar').innerHTML = `
+  const noMapHtml = noCoords.length ? `
+    <div class="mapsb-missing">
+      <div class="mapsb-missing-title">Sin ubicar (${noCoords.length})</div>
+      ${noCoords.map(v => `
+        <div class="mapsb-row">
+          <span class="mapsb-ev-title">${escHtml(v.name)}${v.city ? ` · ${escHtml(v.city)}` : ''}</span>
+        </div>`).join('')}
+    </div>` : '';
+
+  document.getElementById('map-sidebar').innerHTML = !venues.length ? `
+    <div class="mapsb-empty">
+      <div style="font-size:32px;margin-bottom:.75rem">📍</div>
+      <p>No se pudo localizar ningún venue.<br>
+      <small>Asegúrate de que los eventos tienen local y ciudad rellenados.</small></p>
+    </div>` : `
     <div class="mapsb-stats">
       <div class="mapsb-stat"><div class="mapsb-n">${venues.length}</div><div class="mapsb-l">Locales</div></div>
       <div class="mapsb-stat"><div class="mapsb-n">${cities}</div><div class="mapsb-l">Ciudades</div></div>
       <div class="mapsb-stat"><div class="mapsb-n">${totalEvents}</div><div class="mapsb-l">Eventos</div></div>
     </div>
-    ${noMap.length ? `
-    <div class="mapsb-missing">
-      <div class="mapsb-missing-title">Sin ubicación (${noMap.length})</div>
-      ${noMap.map(ev => `
-        <div class="mapsb-row">
-          <span>${CATS[ev.cat]?.emoji || ''}</span>
-          <span class="mapsb-ev-title">${escHtml(ev.title)}</span>
-          ${ev.city ? `<span class="mapsb-ev-city">${escHtml(ev.city)}</span>` : ''}
+    <div class="mapsb-list">
+      ${venues.map(v => `
+        <div class="mapsb-row" onclick="venueMap && venueMap.panTo({lat:${v.coords.lat},lng:${v.coords.lng}}) && venueMap.setZoom(14)">
+          <span class="mapsb-venue">${escHtml(v.name)}</span>
+          <span class="mapsb-city">${escHtml(v.city || '')}</span>
+          <span class="mapsb-count">${v.events.length}</span>
         </div>`).join('')}
-    </div>` : ''}
-    ${!venues.length ? `<div class="mapsb-empty">
-      <p>Ningún evento tiene enlace de mapa.<br>Al añadir un evento, busca el local en el campo <em>Lugar</em> para que aparezca aquí.</p>
-    </div>` : ''}
-  `;
+    </div>
+    ${noMapHtml}
+    <div style="padding:8px;text-align:center">
+      <button onclick="clearGeoCache()" style="background:none;border:none;color:var(--text3);font-size:10px;cursor:pointer;font-family:var(--ui);text-decoration:underline">↺ Recalcular ubicaciones</button>
+    </div>`;
 }
 
 // ── Google Places ──

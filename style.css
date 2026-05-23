@@ -354,6 +354,15 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
 .card-btn.btn-del:hover .btn-lbl { color: #f09595; border-color: rgba(180,50,50,.3); }
 
 .card-title { font-family: var(--serif); font-size: 17px; font-weight: 300; font-style: italic; line-height: 1.2; color: var(--text); letter-spacing: .2px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ── Card location pin link ── */
+.card-pin-link {
+  color: var(--text3); text-decoration: none;
+  transition: color .15s, transform .15s;
+  display: inline-block; line-height: 1;
+}
+.card-pin-link:hover { color: var(--amber-lt); transform: scale(1.2); }
+
 .card-meta { font-size: 10.5px; color: var(--text3); display: flex; align-items: center; gap: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-wrap: nowrap; }
 .card-meta a { color: var(--amber); text-decoration: none; }
 .card-meta a:hover { color: var(--amber-lt); }

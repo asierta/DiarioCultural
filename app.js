@@ -541,7 +541,8 @@ function closeForm() {
   closeCatDropdown();
 }
 
-function setCat(val) {
+function setCat(val, e) {
+  if (e) e.stopPropagation();
   document.getElementById('f-cat').value = val;
   const labels = {'Concierto':'🎵 Concierto','Cine':'🎬 Cine','Teatro':'🎭 Teatro','Exposición':'🖼️ Exposición','Otro':'✨ Otro'};
   const lbl = document.getElementById('cat-select-label');
@@ -552,7 +553,8 @@ function setCat(val) {
   closeCatDropdown();
 }
 
-function toggleCatDropdown() {
+function toggleCatDropdown(e) {
+  if (e) e.stopPropagation();
   const dd  = document.getElementById('cat-dropdown');
   const sel = document.getElementById('cat-select');
   if (!dd || !sel) return;
@@ -574,7 +576,6 @@ function closeCatDropdown() {
 
 function overlayClick(e) {
   if (e.target === document.getElementById('overlay')) closeForm();
-  closeCatDropdown();
 }
 
 function renderStars() {

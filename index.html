@@ -99,16 +99,16 @@
       </div>
       <div class="form-group" style="position:relative">
         <label>Categoría</label>
-        <div class="cat-select" id="cat-select" onclick="toggleCatDropdown()">
+        <div class="cat-select" id="cat-select" onclick="toggleCatDropdown(event)">
           <span id="cat-select-label">🎵 Concierto</span>
           <svg class="cat-select-arrow" viewBox="0 0 10 7" xmlns="http://www.w3.org/2000/svg"><path d="M0 0l5 7 5-7z" fill="currentColor"/></svg>
         </div>
         <div class="cat-dropdown" id="cat-dropdown">
-          <div class="cat-option" data-val="Concierto" onclick="setCat('Concierto')">🎵 Concierto</div>
-          <div class="cat-option" data-val="Cine"      onclick="setCat('Cine')">🎬 Cine</div>
-          <div class="cat-option" data-val="Teatro"    onclick="setCat('Teatro')">🎭 Teatro</div>
-          <div class="cat-option" data-val="Exposición" onclick="setCat('Exposición')">🖼️ Exposición</div>
-          <div class="cat-option" data-val="Otro"      onclick="setCat('Otro')">✨ Otro</div>
+          <div class="cat-option" data-val="Concierto" onclick=\"setCat('Concierto', event)\">🎵 Concierto</div>
+          <div class="cat-option" data-val="Cine"      onclick=\"setCat('Cine', event)\">🎬 Cine</div>
+          <div class="cat-option" data-val="Teatro"    onclick=\"setCat('Teatro', event)\">🎭 Teatro</div>
+          <div class="cat-option" data-val="Exposición" onclick=\"setCat('Exposición', event)\">🖼️ Exposición</div>
+          <div class="cat-option" data-val="Otro"      onclick=\"setCat('Otro', event)\">✨ Otro</div>
         </div>
         <input type="hidden" id="f-cat" value="Concierto"/>
       </div>

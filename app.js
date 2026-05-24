@@ -661,7 +661,7 @@ function getTopCompanions(limit = 6) {
 }
 
 // ── Render ──
-function render() { renderStats(); renderFilters(); renderGrid(); }
+function render() { renderStats(); renderFilters(); renderGrid(); renderTodayWidget(); }
 
 function renderStats() {
   const total = events.length;
@@ -966,6 +966,85 @@ function openDayDetail(dateStr) {
 
 function closeDayDetail() {
   document.getElementById('cal-day-overlay').classList.remove('open');
+}
+
+
+// ── "Hoy en tu diario" widget ──────────────────────────────────────────────────
+
+function getTodayPastEvents() {
+  const now = new Date();
+  const mm  = String(now.getMonth() + 1).padStart(2, '0');
+  const dd  = String(now.getDate()).padStart(2, '0');
+  const currentYear = now.getFullYear();
+  return events
+    .filter(e => {
+      if (!e.date) return false;
+      const parts = e.date.split('-');
+      return parts[1] === mm && parts[2] === dd && parseInt(parts[0]) < currentYear;
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function renderTodayWidget() {
+  const el = document.getElementById('today-widget');
+  if (!el) return;
+
+  // Respect dismiss (stored per calendar day so it reappears next day)
+  const today = new Date().toISOString().slice(0, 10);
+  if (sessionStorage.getItem('tw-dismissed') === today) { el.style.display = 'none'; return; }
+
+  const past = getTodayPastEvents();
+  if (!past.length) { el.style.display = 'none'; return; }
+
+  const now   = new Date();
+  const dayFmt = now.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
+
+  const cards = past.map(ev => {
+    const cat      = CATS[ev.cat] || CATS['Otro'];
+    const yearsAgo = now.getFullYear() - parseInt(ev.date);
+    const stars    = ev.rating ? starsHtml(ev.rating) : '';
+    const loc      = [ev.venue, ev.city].filter(Boolean).join(' · ');
+    const imgStyle = ev.image_url
+      ? `background-image:url('${ev.image_url}');background-position:${ev.image_position||'50% 50%'};background-size:cover;`
+      : `background:linear-gradient(135deg,${cat.color}33 0%,transparent 80%);`;
+
+    return `<div class="tw-card" onclick="openDetail(${ev.id})" style="--cc:${cat.color}">
+      <div class="tw-card-img" style="${imgStyle}">
+        ${!ev.image_url ? `<span class="tw-card-emoji">${cat.emoji}</span>` : ''}
+        <div class="tw-card-year">${ev.date.slice(0,4)}</div>
+      </div>
+      <div class="tw-card-body">
+        <div class="tw-card-ago">${yearsAgo === 1 ? 'Hace 1 año' : `Hace ${yearsAgo} años`}</div>
+        <div class="tw-card-title">${escHtml(ev.title)}</div>
+        ${loc  ? `<div class="tw-card-loc">📍 ${escHtml(loc)}</div>` : ''}
+        ${stars ? `<div class="tw-card-stars stars-row">${stars}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="tw-header">
+      <div class="tw-header-left">
+        <span class="tw-icon">✨</span>
+        <div>
+          <div class="tw-eyebrow">tal día como hoy · ${dayFmt}</div>
+          <div class="tw-title">En tu diario</div>
+        </div>
+      </div>
+      <button class="tw-close" onclick="dismissTodayWidget()" title="Cerrar">✕</button>
+    </div>
+    <div class="tw-scroll">${cards}</div>`;
+}
+
+function dismissTodayWidget() {
+  const today = new Date().toISOString().slice(0, 10);
+  sessionStorage.setItem('tw-dismissed', today);
+  const el = document.getElementById('today-widget');
+  if (el) {
+    el.style.animation = 'twCollapse .3s ease forwards';
+    setTimeout(() => { el.style.display = 'none'; el.style.animation = ''; }, 300);
+  }
 }
 
 // ── Detail view ──

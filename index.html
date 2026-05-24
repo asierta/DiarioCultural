@@ -53,6 +53,13 @@
   </div>
 </header>
 
+<!-- Offline banner -->
+<div id="offline-banner" class="offline-banner">
+  <span class="offline-dot"></span>
+  Sin conexión — los cambios se guardarán localmente y se sincronizarán al volver online
+</div>
+
+
 <!-- Stats -->
 <div class="stats-bar" id="stats-bar">
   <div class="stat"><div class="stat-n">—</div><div class="stat-l">Total</div></div>
@@ -66,6 +73,7 @@
 <div class="view-toggle-bar">
   <button class="view-btn active" id="btn-grid" onclick="setView('grid')" title="Vista cuadrícula">⊞</button>
   <button class="view-btn" id="btn-list" onclick="setView('list')" title="Vista lista">☰</button>
+  <button class="view-btn" id="btn-cal"  onclick="setView('calendar')" title="Vista calendario">📅</button>
 </div>
 
 <!-- Events -->
@@ -214,6 +222,11 @@
       <div id="map-sidebar" class="map-sidebar"></div>
     </div>
   </div>
+</div>
+
+<!-- Calendar day detail -->
+<div id="cal-day-overlay" class="cal-day-overlay" onclick="if(event.target===this)closeDayDetail()">
+  <div class="cal-day-panel" id="cal-day-panel"></div>
 </div>
 
 <div id="toast"></div>

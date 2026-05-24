@@ -16,6 +16,11 @@ let viewMode = localStorage.getItem('viewMode') || 'grid';
 let pendingImageFile = null, existingImageUrl = null, removeExistingImage = false;
 let focusX = 50, focusY = 50, tempFocusX = 50, tempFocusY = 50;
 
+// Offline & calendar state
+let isOnline = navigator.onLine;
+let calYear  = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+
 // ── Utils ──
 function daysUntil(dateStr) {
   if (!dateStr) return null;
@@ -70,6 +75,146 @@ function getCompanions(ev) {
   return ev.companions.split(',').map(c => c.trim()).filter(Boolean);
 }
 
+
+// ── IndexedDB / Offline ────────────────────────────────────────────────────────
+const IDB_NAME = 'diario-cultural';
+const IDB_VER  = 2;
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VER);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('events'))
+        d.createObjectStore('events', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('queue'))
+        d.createObjectStore('queue', { autoIncrement: true });
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function idbSaveAll(evts) {
+  try {
+    const d = await idbOpen();
+    const tx = d.transaction('events', 'readwrite');
+    const st = tx.objectStore('events');
+    await new Promise((res,rej) => { const r = st.clear(); r.onsuccess = res; r.onerror = rej; });
+    evts.forEach(ev => st.put(ev));
+    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+  } catch(_) {}
+}
+
+async function idbUpsert(ev) {
+  try {
+    const d = await idbOpen();
+    const tx = d.transaction('events', 'readwrite');
+    tx.objectStore('events').put(ev);
+    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+  } catch(_) {}
+}
+
+async function idbRemove(id) {
+  try {
+    const d = await idbOpen();
+    const tx = d.transaction('events', 'readwrite');
+    tx.objectStore('events').delete(id);
+    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+  } catch(_) {}
+}
+
+async function idbLoadAll() {
+  try {
+    const d = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const req = d.transaction('events', 'readonly').objectStore('events').getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror   = () => reject(req.error);
+    });
+  } catch(_) { return []; }
+}
+
+async function idbQueueOp(op) {
+  try {
+    const d = await idbOpen();
+    const tx = d.transaction('queue', 'readwrite');
+    tx.objectStore('queue').add(op);
+    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+  } catch(_) {}
+}
+
+async function idbGetQueue() {
+  try {
+    const d = await idbOpen();
+    return new Promise((resolve, reject) => {
+      const req = d.transaction('queue', 'readonly').objectStore('queue').getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror   = () => reject(req.error);
+    });
+  } catch(_) { return []; }
+}
+
+async function idbClearQueue() {
+  try {
+    const d = await idbOpen();
+    const tx = d.transaction('queue', 'readwrite');
+    tx.objectStore('queue').clear();
+    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+  } catch(_) {}
+}
+
+function updateOfflineBanner() {
+  const banner = document.getElementById('offline-banner');
+  if (!banner) return;
+  if (!isOnline) {
+    banner.classList.add('visible');
+  } else {
+    banner.classList.remove('visible');
+  }
+}
+
+async function processSyncQueue() {
+  if (!isOnline) return;
+  const queue = await idbGetQueue();
+  if (!queue.length) return;
+  let synced = 0;
+  const failed = [];
+  for (const op of queue) {
+    try {
+      if (op.type === 'insert') {
+        const { data, error } = await db.from('events').insert([op.payload]).select().single();
+        if (!error && data) {
+          events = events.map(e => e.id === op.tempId ? data : e);
+          await idbRemove(op.tempId);
+          await idbUpsert(data);
+          synced++;
+        } else { failed.push(op); }
+      } else if (op.type === 'update') {
+        const { data, error } = await db.from('events').update(op.payload).eq('id', op.id).select().single();
+        if (!error && data) {
+          events = events.map(e => e.id === op.id ? data : e);
+          await idbUpsert(data);
+          synced++;
+        } else { failed.push(op); }
+      } else if (op.type === 'delete') {
+        const { error } = await db.from('events').delete().eq('id', op.id);
+        if (!error) {
+          if (op.imageUrl) deleteImageFromUrl(op.imageUrl).catch(() => {});
+          synced++;
+        } else { failed.push(op); }
+      }
+    } catch(_) { failed.push(op); }
+  }
+  await idbClearQueue();
+  // Re-queue failed ops
+  for (const op of failed) await idbQueueOp(op);
+  if (synced > 0) {
+    render();
+    toast(`✓ ${synced} cambio${synced > 1 ? 's' : ''} sincronizado${synced > 1 ? 's' : ''}`);
+  }
+}
+
 // ── Auth ──
 async function doLogin() {
   const email = document.getElementById('l-email').value.trim();
@@ -108,9 +253,26 @@ document.addEventListener('keydown', e => {
 
 // ── Data ──
 async function loadEvents() {
+  // Instant render from cache
+  try {
+    const cached = await idbLoadAll();
+    if (cached.length) {
+      events = cached.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
+      render();
+    }
+  } catch(_) {}
+
+  if (!navigator.onLine) {
+    isOnline = false;
+    updateOfflineBanner();
+    if (!events.length) toast('Sin conexión. No hay datos guardados localmente.', true);
+    return;
+  }
+
   const { data, error } = await db.from('events').select('*').order('created_at', { ascending: false });
-  if (error) { toast('Error al conectar con la base de datos', true); return; }
+  if (error) { toast('Error al conectar. Mostrando datos guardados.', true); return; }
   events = data || [];
+  await idbSaveAll(events);
   render();
 }
 
@@ -146,8 +308,11 @@ function setView(mode) {
   localStorage.setItem('viewMode', mode);
   document.getElementById('btn-grid').classList.toggle('active', mode === 'grid');
   document.getElementById('btn-list').classList.toggle('active', mode === 'list');
+  document.getElementById('btn-cal')?.classList.toggle('active', mode === 'calendar');
   const grid = document.getElementById('events-grid');
   grid.classList.toggle('list-view', mode === 'list');
+  grid.classList.toggle('cal-mode', mode === 'calendar');
+  if (mode === 'calendar') renderCalendar();
 }
 
 // ── Search ──
@@ -450,12 +615,14 @@ async function saveEvent() {
     saving = false; btn.disabled = false; btn.textContent = 'Guardar cambios';
     if (error) { toast('Error al actualizar', true); return; }
     events = events.map(e => e.id === editingId ? data : e);
+    await idbUpsert(data);
     toast('✓ Evento actualizado');
   } else {
     const { data, error } = await db.from('events').insert([payload]).select().single();
     saving = false; btn.disabled = false; btn.textContent = 'Guardar evento';
     if (error) { toast('Error al guardar', true); return; }
     events.unshift(data);
+    await idbUpsert(data);
     toast('✓ Evento guardado');
   }
   closeForm();
@@ -469,6 +636,7 @@ async function deleteEvent(id) {
   const { error } = await db.from('events').delete().eq('id', id);
   if (error) { toast('Error al eliminar', true); return; }
   events = events.filter(e => e.id !== id);
+  await idbRemove(id);
   render();
   toast('Evento eliminado');
 }
@@ -540,10 +708,13 @@ function renderFilters() {
 }
 
 function renderGrid() {
+  if (viewMode === 'calendar') { renderCalendar(); return; }
   const el = document.getElementById('events-grid');
   el.classList.toggle('list-view', viewMode === 'list');
+  el.classList.remove('cal-mode');
   document.getElementById('btn-grid')?.classList.toggle('active', viewMode === 'grid');
   document.getElementById('btn-list')?.classList.toggle('active', viewMode === 'list');
+  document.getElementById('btn-cal')?.classList.toggle('active', false);
   let list = events;
   if (filterUpcoming) {
     list = list.filter(e => e.date && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 365);
@@ -624,6 +795,173 @@ function renderGrid() {
   }).join('');
 }
 
+
+
+// ── Calendar View ──────────────────────────────────────────────────────────────
+const CAL_MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const CAL_DAYS   = ['L','M','X','J','V','S','D'];
+
+function prevMonth() {
+  if (calMonth === 0) { calMonth = 11; calYear--; } else calMonth--;
+  renderCalendar();
+}
+function nextMonth() {
+  if (calMonth === 11) { calMonth = 0; calYear++; } else calMonth++;
+  renderCalendar();
+}
+function goToday() {
+  calYear = new Date().getFullYear();
+  calMonth = new Date().getMonth();
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const el = document.getElementById('events-grid');
+  el.classList.remove('list-view');
+  el.classList.add('cal-mode');
+  document.getElementById('btn-grid')?.classList.toggle('active', false);
+  document.getElementById('btn-list')?.classList.toggle('active', false);
+  document.getElementById('btn-cal')?.classList.toggle('active', true);
+
+  let list = events;
+  if (filterCat !== 'Todos') list = list.filter(e => e.cat === filterCat);
+  if (filterCompanion.length) list = list.filter(e => filterCompanion.some(c => getCompanions(e).includes(c)));
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    list = list.filter(e =>
+      e.title?.toLowerCase().includes(q) ||
+      e.venue?.toLowerCase().includes(q) ||
+      e.notes?.toLowerCase().includes(q)
+    );
+  }
+  el.innerHTML = buildCalHTML(list);
+}
+
+function buildCalHTML(list) {
+  const firstDow  = new Date(calYear, calMonth, 1).getDay();
+  const offset    = firstDow === 0 ? 6 : firstDow - 1;
+  const daysInMo  = new Date(calYear, calMonth + 1, 0).getDate();
+  const daysInPrev = new Date(calYear, calMonth, 0).getDate();
+  const today     = new Date(); today.setHours(0,0,0,0);
+  const totalCells = Math.ceil((offset + daysInMo) / 7) * 7;
+
+  // Build date → events map
+  const evtMap = {};
+  list.forEach(ev => {
+    if (!ev.date) return;
+    if (!evtMap[ev.date]) evtMap[ev.date] = [];
+    evtMap[ev.date].push(ev);
+  });
+
+  // Month-level stats
+  const yStr = String(calYear); const mStr = String(calMonth + 1).padStart(2, '0');
+  const monthEvts = list.filter(e => e.date?.startsWith(`${yStr}-${mStr}`));
+  const monthRated = monthEvts.filter(e => e.rating > 0);
+  const monthAvg = monthRated.length ? (monthRated.reduce((s,e) => s+e.rating,0)/monthRated.length).toFixed(1) : null;
+  const monthCats = [...new Set(monthEvts.map(e => e.cat))].map(c => CATS[c]?.emoji).filter(Boolean).join(' ');
+
+  let cells = '';
+  for (let i = 0; i < totalCells; i++) {
+    let day, dateStr;
+    if (i < offset) {
+      day = daysInPrev - offset + i + 1;
+      const pm = calMonth === 0 ? 12 : calMonth;
+      const py = calMonth === 0 ? calYear - 1 : calYear;
+      dateStr = `${py}-${String(pm).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    } else if (i < offset + daysInMo) {
+      day = i - offset + 1;
+      dateStr = `${yStr}-${mStr}-${String(day).padStart(2,'0')}`;
+    } else {
+      day = i - offset - daysInMo + 1;
+      const nm = calMonth === 11 ? 1 : calMonth + 2;
+      const ny = calMonth === 11 ? calYear + 1 : calYear;
+      dateStr = `${ny}-${String(nm).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    }
+
+    const inMonth  = i >= offset && i < offset + daysInMo;
+    const cellDate = new Date(dateStr + 'T00:00:00');
+    const isToday  = inMonth && cellDate.getTime() === today.getTime();
+    const isPast   = inMonth && cellDate < today;
+    const isFuture = inMonth && cellDate > today;
+    const dayEvts  = evtMap[dateStr] || [];
+
+    const dots = dayEvts.slice(0, 6).map(ev => {
+      const cat = CATS[ev.cat] || CATS['Otro'];
+      return `<span class="cal-dot" style="--dc:${cat.color}"></span>`;
+    }).join('') + (dayEvts.length > 6 ? `<span class="cal-dot-more">+${dayEvts.length-6}</span>` : '');
+
+    const preview = dayEvts.slice(0, 3).map(ev =>
+      `<div class="cal-ev-pill" style="--cc:${CATS[ev.cat]?.color||'var(--amber)'}"><span class="cal-ev-emoji">${CATS[ev.cat]?.emoji||''}</span><span class="cal-ev-name">${escHtml(ev.title)}</span></div>`
+    ).join('') + (dayEvts.length > 3 ? `<div class="cal-ev-more">+${dayEvts.length-3} más</div>` : '');
+
+    const hasFutureEvt = dayEvts.some(e => daysUntil(e.date) >= 0);
+    const cls = [
+      'cal-cell',
+      !inMonth ? 'cal-other' : '',
+      isToday  ? 'cal-today' : '',
+      isPast && inMonth && !isToday ? 'cal-past' : '',
+      isFuture ? 'cal-future' : '',
+      dayEvts.length ? 'cal-has-events' : '',
+      hasFutureEvt && inMonth ? 'cal-upcoming-day' : '',
+    ].filter(Boolean).join(' ');
+
+    cells += `<div class="${cls}" ${dayEvts.length ? `onclick="openDayDetail('${dateStr}')" role="button" tabindex="0"` : ''}>
+      <div class="cal-day-num">${day}${isToday ? '<span class="cal-today-ring"></span>' : ''}</div>
+      ${dayEvts.length ? `<div class="cal-dots">${dots}</div><div class="cal-preview">${preview}</div>` : ''}
+    </div>`;
+  }
+
+  const statBadge = monthEvts.length ? `<div class="cal-stat-badge">
+    <span class="csb-n">${monthEvts.length}</span><span class="csb-l">evento${monthEvts.length > 1 ? 's' : ''}</span>
+    ${monthAvg ? `<span class="csb-sep">·</span><span class="csb-n">★ ${monthAvg}</span>` : ''}
+    ${monthCats ? `<span class="csb-sep">·</span><span class="csb-cats">${monthCats}</span>` : ''}
+  </div>` : '<div class="cal-stat-badge csb-empty">Sin eventos este mes</div>';
+
+  return `<div class="cal-wrap">
+    <div class="cal-header">
+      <button class="cal-nav" onclick="prevMonth()" aria-label="Mes anterior">‹</button>
+      <div class="cal-title-group">
+        <div class="cal-title">
+          <span class="cal-month-name">${CAL_MONTHS[calMonth]}</span>
+          <span class="cal-year-lbl">${calYear}</span>
+        </div>
+        ${statBadge}
+      </div>
+      <button class="cal-nav" onclick="nextMonth()" aria-label="Mes siguiente">›</button>
+      <button class="cal-today-btn" onclick="goToday()">Hoy</button>
+    </div>
+    <div class="cal-dow">${CAL_DAYS.map(d=>`<div class="cal-dow-cell">${d}</div>`).join('')}</div>
+    <div class="cal-grid">${cells}</div>
+  </div>`;
+}
+
+function openDayDetail(dateStr) {
+  const dayEvts = events.filter(e => e.date === dateStr);
+  if (!dayEvts.length) return;
+  const [y,m,d] = dateStr.split('-');
+  const ML = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const label = `${parseInt(d)} de ${ML[parseInt(m)-1]} de ${y}`;
+  const items = dayEvts.map(ev => `
+    <div class="cal-day-ev" onclick="closeDayDetail();setTimeout(()=>openDetail(${ev.id}),80)">
+      <span class="cal-day-ev-emoji">${CATS[ev.cat]?.emoji||'✨'}</span>
+      <div class="cal-day-ev-body">
+        <div class="cal-day-ev-title">${escHtml(ev.title)}</div>
+        ${ev.venue||ev.city ? `<div class="cal-day-ev-meta">${escHtml([ev.venue,ev.city].filter(Boolean).join(' · '))}</div>` : ''}
+      </div>
+      ${ev.rating ? `<span class="cal-day-ev-stars">${starsHtml(ev.rating)}</span>` : ''}
+    </div>`).join('');
+  document.getElementById('cal-day-panel').innerHTML = `
+    <div class="cal-day-hd">
+      <div class="cal-day-title">📅 ${label}</div>
+      <button class="cal-day-close" onclick="closeDayDetail()">✕</button>
+    </div>
+    <div class="cal-day-events">${items}</div>`;
+  document.getElementById('cal-day-overlay').classList.add('open');
+}
+
+function closeDayDetail() {
+  document.getElementById('cal-day-overlay').classList.remove('open');
+}
 
 // ── Detail view ──
 function openDetail(id) {
@@ -1665,3 +2003,18 @@ function buildPrintHTML(list) {
 
 db.auth.getSession().then(({ data: { session } }) => { if (session) hideLoginScreen(); });
 loadEvents();
+
+// Offline / online handlers
+window.addEventListener('online', async () => {
+  isOnline = true;
+  updateOfflineBanner();
+  toast('✓ Conexión restaurada — sincronizando…');
+  await loadEvents();
+  await processSyncQueue();
+});
+window.addEventListener('offline', () => {
+  isOnline = false;
+  updateOfflineBanner();
+  toast('Sin conexión — modo offline activo', true);
+});
+updateOfflineBanner();

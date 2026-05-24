@@ -1443,3 +1443,44 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
 .cal-day-ev-title { font-family: var(--serif); font-size: 16px; font-style: italic; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-day-ev-meta  { font-size: 11px; color: var(--text3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-day-ev-stars { font-size: 11px; flex-shrink: 0; }
+
+
+/* ── Category picker ── */
+.cat-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cat-opt {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(255,255,255,.05);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 20px;
+  padding: 7px 14px;
+  color: var(--text2);
+  font-size: 13px;
+  font-family: var(--ui);
+  cursor: pointer;
+  transition: all .18s;
+  white-space: nowrap;
+}
+
+.cat-opt span {
+  font-size: 13px;
+}
+
+.cat-opt:hover {
+  border-color: rgba(255,255,255,.22);
+  color: var(--text);
+  background: rgba(255,255,255,.09);
+}
+
+.cat-opt.active {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: #1a1000;
+  font-weight: 500;
+  box-shadow: 0 0 16px rgba(201,148,58,.4);
+}

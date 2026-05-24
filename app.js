@@ -503,7 +503,7 @@ function openForm(ev = null) {
   document.getElementById('save-btn').textContent    = isEdit ? 'Guardar cambios' : (ev ? 'Guardar copia' : 'Guardar evento');
   document.getElementById('f-title').value    = ev?.title   || '';
   document.getElementById('f-date').value     = ev?.date    || new Date().toISOString().split('T')[0];
-  document.getElementById('f-cat').value      = ev?.cat     || 'Concierto';
+  setCat(ev?.cat || 'Concierto');
   document.getElementById('f-venue').value    = ev?.venue   || '';
   document.getElementById('f-city').value     = ev?.city    || '';
   document.getElementById('f-address').value  = ev?.address || '';
@@ -532,6 +532,13 @@ function openForm(ev = null) {
 function closeForm() {
   document.getElementById('overlay').classList.remove('open');
   editingId = null;
+}
+
+function setCat(val) {
+  document.getElementById('f-cat').value = val;
+  document.querySelectorAll('#f-cat-picker .cat-opt').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.val === val);
+  });
 }
 
 function overlayClick(e) {

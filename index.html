@@ -99,13 +99,14 @@
       </div>
       <div class="form-group">
         <label>Categoría</label>
-        <select id="f-cat">
-          <option value="Concierto">🎵 Concierto</option>
-          <option value="Cine">🎬 Cine</option>
-          <option value="Teatro">🎭 Teatro</option>
-          <option value="Exposición">🖼️ Exposición</option>
-          <option value="Otro">✨ Otro</option>
-        </select>
+        <div class="cat-picker" id="f-cat-picker">
+          <button type="button" class="cat-opt" data-val="Concierto"  onclick="setCat('Concierto')">🎵 <span>Concierto</span></button>
+          <button type="button" class="cat-opt" data-val="Cine"       onclick="setCat('Cine')">🎬 <span>Cine</span></button>
+          <button type="button" class="cat-opt" data-val="Teatro"     onclick="setCat('Teatro')">🎭 <span>Teatro</span></button>
+          <button type="button" class="cat-opt" data-val="Exposición" onclick="setCat('Exposición')">🖼️ <span>Exposición</span></button>
+          <button type="button" class="cat-opt" data-val="Otro"       onclick="setCat('Otro')">✨ <span>Otro</span></button>
+        </div>
+        <input type="hidden" id="f-cat" value="Concierto"/>
       </div>
     </div>
     <div class="form-group">

@@ -1482,8 +1482,8 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
 /* Dropdown panel */
 .cat-dropdown {
   display: none;
-  position: absolute;
-  top: calc(100% + 4px); left: 0; right: 0;
+  position: fixed;
+  /* top/left/width set dynamically by JS */
   background: rgba(14,12,18,.97);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);

@@ -553,12 +553,18 @@ function setCat(val) {
 }
 
 function toggleCatDropdown() {
-  const dd = document.getElementById('cat-dropdown');
+  const dd  = document.getElementById('cat-dropdown');
   const sel = document.getElementById('cat-select');
-  if (!dd) return;
-  const isOpen = dd.classList.contains('open');
-  if (isOpen) { closeCatDropdown(); }
-  else { dd.classList.add('open'); sel.classList.add('open'); }
+  if (!dd || !sel) return;
+  if (dd.classList.contains('open')) { closeCatDropdown(); return; }
+
+  // Position fixed so it escapes overflow:hidden/auto on .sheet
+  const r = sel.getBoundingClientRect();
+  dd.style.top   = (r.bottom + 4) + 'px';
+  dd.style.left  = r.left + 'px';
+  dd.style.width = r.width + 'px';
+  dd.classList.add('open');
+  sel.classList.add('open');
 }
 
 function closeCatDropdown() {

@@ -266,11 +266,6 @@ async function loadEvents() {
     isOnline = false;
     updateOfflineBanner();
 
-// Close cat dropdown on outside click
-document.addEventListener('click', e => {
-  if (!e.target.closest('#cat-select') && !e.target.closest('#cat-dropdown'))
-    closeCatDropdown();
-});
     if (!events.length) toast('Sin conexión. No hay datos guardados localmente.', true);
     return;
   }
@@ -509,7 +504,7 @@ function openForm(ev = null) {
   document.getElementById('save-btn').textContent    = isEdit ? 'Guardar cambios' : (ev ? 'Guardar copia' : 'Guardar evento');
   document.getElementById('f-title').value    = ev?.title   || '';
   document.getElementById('f-date').value     = ev?.date    || new Date().toISOString().split('T')[0];
-  setCat(ev?.cat || 'Concierto');
+  document.getElementById('f-cat').value = ev?.cat || 'Concierto';
   document.getElementById('f-venue').value    = ev?.venue   || '';
   document.getElementById('f-city').value     = ev?.city    || '';
   document.getElementById('f-address').value  = ev?.address || '';
@@ -538,41 +533,10 @@ function openForm(ev = null) {
 function closeForm() {
   document.getElementById('overlay').classList.remove('open');
   editingId = null;
-  closeCatDropdown();
 }
 
-function setCat(val, e) {
-  if (e) e.stopPropagation();
-  document.getElementById('f-cat').value = val;
-  const labels = {'Concierto':'🎵 Concierto','Cine':'🎬 Cine','Teatro':'🎭 Teatro','Exposición':'🖼️ Exposición','Otro':'✨ Otro'};
-  const lbl = document.getElementById('cat-select-label');
-  if (lbl) lbl.textContent = labels[val] || val;
-  document.querySelectorAll('#cat-dropdown .cat-option').forEach(o =>
-    o.classList.toggle('active', o.dataset.val === val)
-  );
-  closeCatDropdown();
-}
 
-function toggleCatDropdown(e) {
-  if (e) e.stopPropagation();
-  const dd  = document.getElementById('cat-dropdown');
-  const sel = document.getElementById('cat-select');
-  if (!dd || !sel) return;
-  if (dd.classList.contains('open')) { closeCatDropdown(); return; }
 
-  // Position fixed so it escapes overflow:hidden/auto on .sheet
-  const r = sel.getBoundingClientRect();
-  dd.style.top   = (r.bottom + 4) + 'px';
-  dd.style.left  = r.left + 'px';
-  dd.style.width = r.width + 'px';
-  dd.classList.add('open');
-  sel.classList.add('open');
-}
-
-function closeCatDropdown() {
-  document.getElementById('cat-dropdown')?.classList.remove('open');
-  document.getElementById('cat-select')?.classList.remove('open');
-}
 
 function overlayClick(e) {
   if (e.target === document.getElementById('overlay')) closeForm();

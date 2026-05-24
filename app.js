@@ -275,6 +275,7 @@ async function loadEvents() {
   events = data || [];
   await idbSaveAll(events);
   render();
+  checkAndNotify();
 }
 
 // ── Half-star helpers ──
@@ -1045,6 +1046,307 @@ function dismissTodayWidget() {
     el.style.animation = 'twCollapse .3s ease forwards';
     setTimeout(() => { el.style.display = 'none'; el.style.animation = ''; }, 300);
   }
+}
+
+
+// ── Web Push / Notificaciones locales ──────────────────────────────────────────
+
+const NOTIF_ENABLED_KEY = 'dc-notif-v1';
+const NOTIF_LOG_KEY     = 'dc-notif-log-v1';
+const NOTIF_DAYS_KEY    = 'dc-notif-days-v1'; // JSON array e.g. [0,1,3,7]
+
+const DEFAULT_DAYS = [0, 1, 3]; // today, tomorrow, 3 days before
+
+function notifEnabled() {
+  return localStorage.getItem(NOTIF_ENABLED_KEY) === '1'
+      && 'Notification' in window
+      && Notification.permission === 'granted';
+}
+
+function getNotifDays() {
+  try { return JSON.parse(localStorage.getItem(NOTIF_DAYS_KEY)) || DEFAULT_DAYS; }
+  catch(_) { return DEFAULT_DAYS; }
+}
+
+function getNotifLog() {
+  try { return JSON.parse(localStorage.getItem(NOTIF_LOG_KEY) || '{}'); }
+  catch(_) { return {}; }
+}
+
+function saveNotifLog(log) {
+  // Keep only entries from the last 30 days
+  const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  Object.keys(log).forEach(k => { if (log[k] < cutoff) delete log[k]; });
+  localStorage.setItem(NOTIF_LOG_KEY, JSON.stringify(log));
+}
+
+// ── Main toggle ──
+async function toggleNotifications() {
+  if (!('Notification' in window)) {
+    toast('Tu navegador no soporta notificaciones', true);
+    return;
+  }
+  if (notifEnabled()) {
+    openNotifPanel();
+    return;
+  }
+  // Request permission first
+  const perm = Notification.permission === 'granted'
+    ? 'granted'
+    : await Notification.requestPermission();
+
+  if (perm !== 'granted') {
+    toast('Permiso denegado — actívalo en la configuración del navegador', true);
+    return;
+  }
+  localStorage.setItem(NOTIF_ENABLED_KEY, '1');
+  updateNotifBtn();
+  openNotifPanel();
+  // Try periodic background sync (Chrome Android)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready.then(reg => {
+      if ('periodicSync' in reg) {
+        reg.periodicSync.register('dc-event-reminders', { minInterval: 12 * 3600 * 1000 })
+          .catch(() => {});
+      }
+    });
+  }
+}
+
+function disableNotifications() {
+  localStorage.removeItem(NOTIF_ENABLED_KEY);
+  localStorage.removeItem(NOTIF_LOG_KEY);
+  updateNotifBtn();
+  closeNotifPanel();
+  toast('Recordatorios desactivados');
+}
+
+// ── Button state ──
+function updateNotifBtn() {
+  const btn = document.getElementById('notif-btn');
+  if (!btn) return;
+  const on = notifEnabled();
+  btn.innerHTML   = on ? '🔔' : '🔕';
+  btn.title       = on ? 'Gestionar recordatorios' : 'Activar recordatorios';
+  btn.classList.toggle('notif-active', on);
+}
+
+// ── Settings panel ──
+function openNotifPanel() {
+  updateNotifBtn();
+  renderNotifPanel();
+  document.getElementById('notif-panel-overlay').classList.add('open');
+}
+
+function closeNotifPanel() {
+  document.getElementById('notif-panel-overlay').classList.remove('open');
+}
+
+function renderNotifPanel() {
+  const on   = notifEnabled();
+  const days = getNotifDays();
+  const perm = 'Notification' in window ? Notification.permission : 'unsupported';
+
+  const upcoming = events
+    .filter(e => e.date && daysUntil(e.date) !== null && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 30)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const permBadge = {
+    granted:     '<span class="np-badge np-granted">● Concedido</span>',
+    denied:      '<span class="np-badge np-denied">● Denegado</span>',
+    default:     '<span class="np-badge np-default">● Sin configurar</span>',
+    unsupported: '<span class="np-badge np-denied">● No soportado</span>',
+  }[perm] || '';
+
+  const dayOptions = [
+    { v: 0, l: 'El mismo día del evento' },
+    { v: 1, l: '1 día antes' },
+    { v: 3, l: '3 días antes' },
+    { v: 7, l: '7 días antes' },
+  ];
+
+  const upcomingHtml = upcoming.length ? `
+    <div class="np-section">
+      <div class="np-section-title">Próximos eventos (${upcoming.length})</div>
+      <div class="np-ev-list">
+        ${upcoming.slice(0, 6).map(ev => {
+          const d = daysUntil(ev.date);
+          const cd = countdownLabel(d);
+          return `<div class="np-ev-row">
+            <span>${CATS[ev.cat]?.emoji || '✨'}</span>
+            <div class="np-ev-info">
+              <div class="np-ev-title">${escHtml(ev.title)}</div>
+              <div class="np-ev-date">${fmtDate(ev.date)}</div>
+            </div>
+            ${cd ? `<span class="np-ev-cd ${cd.cls}">${cd.text}</span>` : ''}
+          </div>`;
+        }).join('')}
+        ${upcoming.length > 6 ? `<div class="np-ev-more">+ ${upcoming.length - 6} más</div>` : ''}
+      </div>
+    </div>` : '<p class="np-empty">No tienes eventos futuros en los próximos 30 días.</p>';
+
+  document.getElementById('notif-panel-body').innerHTML = `
+    <!-- Status -->
+    <div class="np-status">
+      <div class="np-status-row">
+        <span class="np-status-label">Permiso del navegador</span>
+        ${permBadge}
+      </div>
+      <div class="np-status-row">
+        <span class="np-status-label">Recordatorios</span>
+        <span class="np-badge ${on ? 'np-granted' : 'np-default'}">${on ? '● Activados' : '● Desactivados'}</span>
+      </div>
+    </div>
+
+    ${perm === 'denied' ? `
+    <div class="np-warn">
+      ⚠️ Has denegado los permisos. Debes activarlos manualmente en la configuración de tu navegador (🔒 junto a la URL).
+    </div>` : ''}
+
+    <!-- When to notify -->
+    ${on && perm === 'granted' ? `
+    <div class="np-section">
+      <div class="np-section-title">Cuándo notificar</div>
+      <div class="np-checks">
+        ${dayOptions.map(opt => `
+          <label class="np-check">
+            <input type="checkbox" value="${opt.v}"
+              ${days.includes(opt.v) ? 'checked' : ''}
+              onchange="toggleNotifDay(${opt.v}, this.checked)"/>
+            <span class="np-check-box"></span>
+            <span>${opt.l}</span>
+          </label>`).join('')}
+      </div>
+    </div>
+
+    <!-- Test button -->
+    <div class="np-section">
+      <div class="np-section-title">Prueba</div>
+      <button class="np-test-btn" onclick="sendTestNotification()">
+        🔔 Enviar notificación de prueba
+      </button>
+    </div>
+
+    ${upcomingHtml}
+
+    <!-- Disable -->
+    <button class="np-disable-btn" onclick="disableNotifications()">
+      🔕 Desactivar recordatorios
+    </button>
+    ` : !on && perm !== 'denied' ? `
+    <p class="np-desc">
+      Recibe alertas en tu dispositivo antes de tus eventos culturales, incluso con la app en segundo plano.
+      No se envía nada a ningún servidor — todo funciona localmente en tu navegador.
+    </p>
+    <button class="np-enable-btn" onclick="enableNotifications()">
+      🔔 Activar recordatorios
+    </button>
+    ${upcomingHtml}
+    ` : ''}`;
+}
+
+async function enableNotifications() {
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') {
+    toast('Permiso denegado', true);
+    renderNotifPanel();
+    return;
+  }
+  localStorage.setItem(NOTIF_ENABLED_KEY, '1');
+  updateNotifBtn();
+  renderNotifPanel();
+  checkAndNotify();
+  toast('✓ Recordatorios activados');
+}
+
+function toggleNotifDay(day, checked) {
+  const days = getNotifDays();
+  const idx  = days.indexOf(day);
+  if (checked && idx === -1)  days.push(day);
+  if (!checked && idx !== -1) days.splice(idx, 1);
+  localStorage.setItem(NOTIF_DAYS_KEY, JSON.stringify(days));
+}
+
+function sendTestNotification() {
+  fireNotification(
+    '🎭 Diario Cultural — Prueba',
+    'Las notificaciones funcionan correctamente. ¡Hasta pronto!',
+    'test'
+  );
+  toast('Notificación enviada');
+}
+
+// ── Core notification logic ──
+function checkAndNotify() {
+  if (!notifEnabled()) return;
+  const notifDays = getNotifDays();
+  const log       = getNotifLog();
+  const todayStr  = new Date().toISOString().slice(0, 10);
+
+  events.forEach(ev => {
+    if (!ev.date) return;
+    const d = daysUntil(ev.date);
+    if (d === null || d < 0 || d > 30) return;
+    if (!notifDays.includes(d > 7 ? null : d)) {
+      // Check if d matches any configured threshold
+      const threshold = notifDays.find(t => t === d);
+      if (threshold === undefined) return;
+    }
+    // Check exact match to configured thresholds
+    if (!notifDays.includes(d)) return;
+
+    const logKey = `${ev.id}-d${d}`;
+    if (log[logKey] === todayStr) return; // already fired today
+
+    const { title, body } = buildNotifTexts(ev, d);
+    fireNotification(title, body, `ev-${ev.id}-d${d}`);
+    log[logKey] = todayStr;
+  });
+
+  saveNotifLog(log);
+}
+
+function buildNotifTexts(ev, daysAway) {
+  const emoji = CATS[ev.cat]?.emoji || '🎭';
+  const loc   = [ev.venue, ev.city].filter(Boolean).join(', ');
+  let title, body;
+  if (daysAway === 0) {
+    title = `¡Hoy! ${emoji} ${ev.title}`;
+    body  = loc || 'Que lo disfrutes 🎉';
+  } else if (daysAway === 1) {
+    title = `Mañana: ${emoji} ${ev.title}`;
+    body  = loc ? `📍 ${loc}` : 'Recuerda que tienes un evento mañana';
+  } else {
+    title = `En ${daysAway} días: ${emoji} ${ev.title}`;
+    body  = `${fmtDate(ev.date)}${loc ? ' · ' + loc : ''}`;
+  }
+  return { title, body };
+}
+
+function fireNotification(title, body, tag) {
+  if (!notifEnabled()) return;
+  const opts = {
+    body,
+    tag,
+    icon:     'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="%2309080a" rx="80"/><text y="330" x="256" text-anchor="middle" font-size="280">🎭</text></svg>'),
+    badge:    'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><rect width="96" height="96" fill="%2309080a" rx="18"/><text y="70" x="48" text-anchor="middle" font-size="62">🎭</text></svg>'),
+    vibrate:  [200, 100, 200],
+    renotify: false,
+  };
+  if (navigator.serviceWorker?.controller) {
+    navigator.serviceWorker.ready
+      .then(reg => reg.showNotification(title, opts))
+      .catch(() => new Notification(title, opts));
+  } else {
+    try { new Notification(title, opts); } catch(_) {}
+  }
+}
+
+// Listen for messages from SW (periodic background sync)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data?.type === 'CHECK_NOTIFICATIONS') checkAndNotify();
+  });
 }
 
 // ── Detail view ──

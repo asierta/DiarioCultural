@@ -49,6 +49,7 @@
     <button id="add-btn" onclick="openForm()">＋ Añadir</button>
     <button id="map-btn"   onclick="openMap()"   title="Mapa de venues">🗺</button>
     <button id="stats-btn" onclick="openStats()" title="Estadísticas">📊</button>
+    <button id="notif-btn" onclick="toggleNotifications()" title="Activar recordatorios">🔕</button>
     <button id="logout-btn" onclick="doLogout()">↩ Salir</button>
   </div>
 </header>
@@ -228,6 +229,20 @@
 <!-- Calendar day detail -->
 <div id="cal-day-overlay" class="cal-day-overlay" onclick="if(event.target===this)closeDayDetail()">
   <div class="cal-day-panel" id="cal-day-panel"></div>
+</div>
+
+<!-- Notification settings panel -->
+<div id="notif-panel-overlay" class="notif-panel-overlay" onclick="if(event.target===this)closeNotifPanel()">
+  <div class="notif-panel">
+    <div class="notif-panel-hd">
+      <div>
+        <div class="notif-eyebrow">recordatorios</div>
+        <h2 class="notif-panel-title">Notificaciones <em>locales</em></h2>
+      </div>
+      <button class="stats-close" onclick="closeNotifPanel()">✕</button>
+    </div>
+    <div class="notif-panel-body" id="notif-panel-body"></div>
+  </div>
 </div>
 
 <div id="toast"></div>

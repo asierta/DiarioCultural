@@ -313,6 +313,7 @@ function setView(mode) {
   grid.classList.toggle('list-view', mode === 'list');
   grid.classList.toggle('cal-mode', mode === 'calendar');
   if (mode === 'calendar') renderCalendar();
+  else renderGrid();
 }
 
 // ── Search ──

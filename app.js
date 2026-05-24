@@ -265,6 +265,12 @@ async function loadEvents() {
   if (!navigator.onLine) {
     isOnline = false;
     updateOfflineBanner();
+
+// Close cat dropdown on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('#cat-select') && !e.target.closest('#cat-dropdown'))
+    closeCatDropdown();
+});
     if (!events.length) toast('Sin conexión. No hay datos guardados localmente.', true);
     return;
   }
@@ -532,17 +538,37 @@ function openForm(ev = null) {
 function closeForm() {
   document.getElementById('overlay').classList.remove('open');
   editingId = null;
+  closeCatDropdown();
 }
 
 function setCat(val) {
   document.getElementById('f-cat').value = val;
-  document.querySelectorAll('#f-cat-picker .cat-opt').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.val === val);
-  });
+  const labels = {'Concierto':'🎵 Concierto','Cine':'🎬 Cine','Teatro':'🎭 Teatro','Exposición':'🖼️ Exposición','Otro':'✨ Otro'};
+  const lbl = document.getElementById('cat-select-label');
+  if (lbl) lbl.textContent = labels[val] || val;
+  document.querySelectorAll('#cat-dropdown .cat-option').forEach(o =>
+    o.classList.toggle('active', o.dataset.val === val)
+  );
+  closeCatDropdown();
+}
+
+function toggleCatDropdown() {
+  const dd = document.getElementById('cat-dropdown');
+  const sel = document.getElementById('cat-select');
+  if (!dd) return;
+  const isOpen = dd.classList.contains('open');
+  if (isOpen) { closeCatDropdown(); }
+  else { dd.classList.add('open'); sel.classList.add('open'); }
+}
+
+function closeCatDropdown() {
+  document.getElementById('cat-dropdown')?.classList.remove('open');
+  document.getElementById('cat-select')?.classList.remove('open');
 }
 
 function overlayClick(e) {
   if (e.target === document.getElementById('overlay')) closeForm();
+  closeCatDropdown();
 }
 
 function renderStars() {

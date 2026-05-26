@@ -526,6 +526,8 @@ function openForm(ev = null) {
   }
 
   formRating = ev?.rating || 0;
+  const ratingInp = document.getElementById('f-rating');
+  if (ratingInp) ratingInp.value = formRating;
   renderStars();
   document.getElementById('overlay').classList.add('open');
   setTimeout(() => document.getElementById('f-title').focus(), 300);
@@ -551,8 +553,8 @@ function renderStars() {
     const lOn = display >= i - 0.5 ? ' on' : '';
     const rOn = display >= i       ? ' on' : '';
     return `<span class="sip">` +
-      `<button class="sip-l${lOn}" onclick="clickStarVal(${i-.5})" onmouseenter="hoverStarVal(${i-.5})" onmouseleave="leaveStars()" title="${i-.5} ★"><span>★</span></button>` +
-      `<button class="sip-r${rOn}" onclick="clickStarVal(${i})"   onmouseenter="hoverStarVal(${i})"   onmouseleave="leaveStars()" title="${i} ★"><span>★</span></button>` +
+      `<button type="button" class="sip-l${lOn}" onclick="clickStarVal(${i-.5})" onmouseenter="hoverStarVal(${i-.5})" onmouseleave="leaveStars()" title="${i-.5} ★"><span>★</span></button>` +
+      `<button type="button" class="sip-r${rOn}" onclick="clickStarVal(${i})"   onmouseenter="hoverStarVal(${i})"   onmouseleave="leaveStars()" title="${i} ★"><span>★</span></button>` +
       `</span>`;
   }).join('');
 }
@@ -560,6 +562,8 @@ function renderStars() {
 function clickStarVal(val) {
   formRating = (formRating === val) ? 0 : val;
   hoverRating = 0;
+  const inp = document.getElementById('f-rating');
+  if (inp) inp.value = formRating;
   renderStars();
 }
 
@@ -611,7 +615,7 @@ async function saveEvent() {
     maps_url:       document.getElementById('f-maps-url').value.trim(),
     notes:          document.getElementById('f-notes').value.trim(),
     companions:     document.getElementById('f-companions').value.trim(),
-    rating:         formRating ? +formRating : null,   // float: requires column type real/numeric in Supabase
+    rating:         (() => { const r = parseFloat(document.getElementById('f-rating')?.value ?? formRating); return r > 0 ? r : null; })(),
     image_url:      imageUrl,
     image_position: imagePosition,
   };

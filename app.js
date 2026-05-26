@@ -622,6 +622,7 @@ async function saveEvent() {
     if (error) { toast('Error al actualizar', true); return; }
     events = events.map(e => e.id === editingId ? data : e);
     await idbUpsert(data);
+    if (formRating === 5) launchConfetti();
     toast('✓ Evento actualizado');
   } else {
     const { data, error } = await db.from('events').insert([payload]).select().single();
@@ -629,6 +630,7 @@ async function saveEvent() {
     if (error) { toast('Error al guardar', true); return; }
     events.unshift(data);
     await idbUpsert(data);
+    if (formRating === 5) launchConfetti();
     toast('✓ Evento guardado');
   }
   closeForm();
@@ -1347,6 +1349,102 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', e => {
     if (e.data?.type === 'CHECK_NOTIFICATIONS') checkAndNotify();
   });
+}
+
+
+// ── Confetti ★★★★★ ──────────────────────────────────────────────────────────
+
+function launchConfetti() {
+  const canvas = document.getElementById('confetti-canvas');
+  if (!canvas) return;
+  const ctx    = canvas.getContext('2d');
+
+  // Resize to viewport
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  canvas.style.display = 'block';
+
+  // Palette inspired by the app's category colours + amber
+  const COLORS = ['#e4b96a','#c9943a','#a87fd4','#5e9fd8','#d4776a','#72b87c','#fff'];
+  const SHAPES = ['rect', 'circle', 'strip'];
+
+  // Burst from two points near the top
+  const bursts = [
+    { x: canvas.width * .25, vy: -18 },
+    { x: canvas.width * .75, vy: -18 },
+  ];
+
+  const particles = [];
+  bursts.forEach(b => {
+    for (let i = 0; i < 90; i++) {
+      const angle = (Math.random() * Math.PI) - Math.PI;   // full circle
+      const speed = 6 + Math.random() * 14;
+      particles.push({
+        x:    b.x + (Math.random() - .5) * 60,
+        y:    canvas.height * .12,
+        vx:   Math.cos(angle) * speed,
+        vy:   Math.sin(angle) * speed + b.vy,
+        w:    5 + Math.random() * 9,
+        h:    3 + Math.random() * 5,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        shape: SHAPES[Math.floor(Math.random() * SHAPES.length)],
+        rot:   Math.random() * Math.PI * 2,
+        rotV:  (Math.random() - .5) * .25,
+        gravity: .55 + Math.random() * .2,
+        drag:    .985,
+        opacity: 1,
+        fadeStart: 120,   // frame at which to start fading
+        frame: 0,
+      });
+    }
+  });
+
+  let frame = 0;
+  const MAX_FRAMES = 180;   // ~3 s at 60 fps
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let alive = false;
+
+    particles.forEach(p => {
+      p.frame++;
+      p.vx *= p.drag;
+      p.vy  = p.vy * p.drag + p.gravity;
+      p.x  += p.vx;
+      p.y  += p.vy;
+      p.rot += p.rotV;
+      if (p.frame > p.fadeStart) p.opacity -= .022;
+      if (p.opacity <= 0) return;
+
+      alive = true;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.opacity);
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+
+      if (p.shape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(0, 0, p.w / 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.shape === 'strip') {
+        ctx.fillRect(-p.w / 2, -p.h / 4, p.w, p.h / 2);
+      } else {
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      }
+      ctx.restore();
+    });
+
+    frame++;
+    if (alive && frame < MAX_FRAMES + 60) {
+      requestAnimationFrame(draw);
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.style.display = 'none';
+    }
+  }
+
+  requestAnimationFrame(draw);
 }
 
 // ── Detail view ──

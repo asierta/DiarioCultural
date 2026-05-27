@@ -2,13 +2,54 @@ const SUPABASE_URL = 'https://uuonayxdlmdkrznghivz.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV1b25heXhkbG1ka3J6bmdoaXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3NDUwMzAsImV4cCI6MjA5NDMyMTAzMH0.p9xhXP0_EcL6gqKOESmjfcPA3qYzdE9iIQTXnSAUeqI';
 const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const CATS = {
-  'Concierto':  { emoji: '🎵', color: 'var(--c-concert)' },
-  'Cine':       { emoji: '🎬', color: 'var(--c-cinema)'  },
-  'Teatro':     { emoji: '🎭', color: 'var(--c-teatro)'  },
-  'Exposición': { emoji: '🖼️', color: 'var(--c-expo)'    },
-  'Otro':       { emoji: '✨', color: 'var(--c-otro)'    },
+const BUILTIN_CATS = {
+  'Concierto':  { emoji: '🎵', color: 'var(--c-concert)', builtin: true },
+  'Cine':       { emoji: '🎬', color: 'var(--c-cinema)',  builtin: true },
+  'Teatro':     { emoji: '🎭', color: 'var(--c-teatro)',  builtin: true },
+  'Exposición': { emoji: '🖼️', color: 'var(--c-expo)',    builtin: true },
+  'Otro':       { emoji: '✨', color: 'var(--c-otro)',    builtin: true },
 };
+let CATS = { ...BUILTIN_CATS };
+
+// Hex colours for canvas rendering (CSS vars don't work on canvas)
+const BUILTIN_HEX = { Concierto:'#a87fd4', Cine:'#5e9fd8', Teatro:'#d4776a', Exposición:'#72b87c', Otro:'#c9943a' };
+function catHexColor(name) { return BUILTIN_HEX[name] || CATS[name]?.color || '#c9943a'; }
+
+// ── Custom categories ───────────────────────────────────────────────────────
+const CUSTOM_COLORS = ['#e8a87c','#7ce8c4','#e87ca8','#7cb4e8','#c4e87c',
+                       '#e8c47c','#7cdce8','#d47ce8','#e8d47c','#7ce8a8',
+                       '#f0a0b8','#a0c8f0','#b8f0a0','#f0d0a0','#c0a0f0'];
+
+function getCustomCats() {
+  try { return JSON.parse(localStorage.getItem('dc-custom-cats') || '[]'); } catch(_) { return []; }
+}
+function saveCustomCats(list) {
+  localStorage.setItem('dc-custom-cats', JSON.stringify(list));
+  loadCats();
+}
+function loadCats() {
+  CATS = { ...BUILTIN_CATS };
+  getCustomCats().forEach(c => { CATS[c.name] = { emoji: c.emoji, color: c.color }; });
+}
+function addCustomCat(name, emoji) {
+  if (!name.trim() || CATS[name]) return false;
+  const list  = getCustomCats();
+  const color = CUSTOM_COLORS[list.length % CUSTOM_COLORS.length];
+  list.push({ name: name.trim(), emoji: emoji || '⭐', color });
+  saveCustomCats(list);
+  return true;
+}
+function deleteCustomCat(name) {
+  saveCustomCats(getCustomCats().filter(c => c.name !== name));
+}
+function rebuildCatSelect(keepVal) {
+  const sel = document.getElementById('f-cat');
+  if (!sel) return;
+  const val = keepVal ?? sel.value;
+  sel.innerHTML = Object.entries(CATS)
+    .map(([n, c]) => `<option value="${n}"${n === val ? ' selected' : ''}>${c.emoji} ${n}</option>`)
+    .join('');
+}
 
 let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'newest', filterUpcoming = false, hideUpcoming = false;
 let searchQuery = '', formRating = 0, hoverRating = 0, saving = false, editingId = null;
@@ -518,7 +559,7 @@ function openForm(ev = null) {
   document.getElementById('save-btn').textContent    = isEdit ? 'Guardar cambios' : (ev ? 'Guardar copia' : 'Guardar evento');
   document.getElementById('f-title').value    = ev?.title   || '';
   document.getElementById('f-date').value     = ev?.date    || new Date().toISOString().split('T')[0];
-  document.getElementById('f-cat').value = ev?.cat || 'Concierto';
+  rebuildCatSelect(ev?.cat || 'Concierto');
   document.getElementById('f-venue').value    = ev?.venue   || '';
   document.getElementById('f-city').value     = ev?.city    || '';
   document.getElementById('f-address').value  = ev?.address || '';
@@ -1501,6 +1542,83 @@ function launchConfetti() {
   requestAnimationFrame(draw);
 }
 
+
+// ── Category manager ────────────────────────────────────────────────────────
+
+function openCatManager() {
+  loadCats();
+  renderCatManager();
+  document.getElementById('cat-manager-overlay').classList.add('open');
+}
+function closeCatManager() {
+  document.getElementById('cat-manager-overlay').classList.remove('open');
+  rebuildCatSelect();
+  renderFilters();
+}
+
+function renderCatManager() {
+  const custom = getCustomCats();
+
+  const builtinRows = Object.entries(BUILTIN_CATS).map(([name, cat]) => `
+    <div class="cm-row">
+      <span class="cm-emoji">${cat.emoji}</span>
+      <span class="cm-name">${name}</span>
+      <span class="cm-badge">Predefinida</span>
+    </div>`).join('');
+
+  const customRows = custom.length
+    ? custom.map(c => `
+    <div class="cm-row">
+      <span class="cm-emoji">${escHtml(c.emoji)}</span>
+      <span class="cm-name">${escHtml(c.name)}</span>
+      <span class="cm-swatch" style="background:${c.color}"></span>
+      <button class="cm-del" onclick="confirmDeleteCat('${c.name.replace(/'/g,"\'")}')">✕</button>
+    </div>`).join('')
+    : '<p class="cm-empty">Aún no tienes categorías personalizadas.</p>';
+
+  document.getElementById('cat-manager-body').innerHTML = `
+    <div class="cm-section">
+      <div class="cm-section-lbl">Predefinidas</div>
+      ${builtinRows}
+    </div>
+    <div class="cm-section">
+      <div class="cm-section-lbl">Personalizadas</div>
+      ${customRows}
+    </div>
+    <div class="cm-section">
+      <div class="cm-section-lbl">Añadir categoría</div>
+      <div class="cm-add-row">
+        <input type="text" id="cm-emoji" placeholder="🎪" maxlength="4" class="cm-emoji-inp" autocomplete="off"/>
+        <input type="text" id="cm-name"  placeholder="Nombre…" class="cm-name-inp" autocomplete="off"
+               onkeydown="if(event.key==='Enter')submitNewCat()"/>
+        <button type="button" class="cm-add-btn" onclick="submitNewCat()">Añadir</button>
+      </div>
+    </div>`;
+
+  // Focus the name input
+  setTimeout(() => document.getElementById('cm-name')?.focus(), 200);
+}
+
+function submitNewCat() {
+  const name  = document.getElementById('cm-name')?.value.trim();
+  const emoji = document.getElementById('cm-emoji')?.value.trim() || '⭐';
+  if (!name) { document.getElementById('cm-name')?.focus(); return; }
+  if (CATS[name]) { toast(`La categoría "${name}" ya existe`, true); return; }
+  if (addCustomCat(name, emoji)) {
+    toast(`✓ Categoría "${name}" añadida`);
+    renderCatManager();
+  }
+}
+
+function confirmDeleteCat(name) {
+  if (!confirm(`¿Eliminar la categoría "${name}"?
+Los eventos existentes con esta categoría no se verán afectados.`)) return;
+  deleteCustomCat(name);
+  renderCatManager();
+  toast(`Categoría "${name}" eliminada`);
+  renderFilters();
+}
+
 // ── Detail view ──
 function openDetail(id) {
   const ev = events.find(e => e.id === id);
@@ -1922,8 +2040,7 @@ async function buildShareImage(ev) {
   }
 
   // Barra de acento (izquierda)
-  const CAT_COLORS = { Concierto:'#a87fd4', Cine:'#5e9fd8', Teatro:'#d4776a', Exposición:'#72b87c', Otro:'#c9943a' };
-  const accent = CAT_COLORS[ev.cat] || '#c9943a';
+  const accent = catHexColor(ev.cat);
   ctx.fillStyle = accent;
   ctx.fillRect(0, 0, 7, S);
 
@@ -2032,7 +2149,8 @@ function downloadBlob(blob, filename) {
 
 
 // ── Año en imágenes ──
-const PLURAL = { Concierto:'conciertos', Cine:'películas', Teatro:'obras de teatro', Exposición:'exposiciones', Otro:'eventos' };
+const PLURAL_MAP = { Concierto:'conciertos', Cine:'películas', Teatro:'obras de teatro', Exposición:'exposiciones', Otro:'eventos' };
+function catPlural(name) { return PLURAL_MAP[name] || name.toLowerCase() + 's'; }
 const MEDALS = ['🥇','🥈','🥉'];
 let wSlides = [], wIdx = 0;
 
@@ -2118,7 +2236,7 @@ function buildWrappedSlides(evts, year) {
       <div class="ws-eyebrow">tu pasión</div>
       <div class="ws-emoji">${topCat.meta.emoji}</div>
       <div class="ws-big" style="color:${col}">${topCat.v}</div>
-      <div class="ws-label">${PLURAL[topCat.c]||topCat.c.toLowerCase()}</div>
+      <div class="ws-label">${catPlural(topCat.c)
       ${catCts.length>1?`<div class="ws-sub">seguido de ${catCts[1].meta.emoji} ${catCts[1].c} (${catCts[1].v})</div>`:''}
     `});
   }

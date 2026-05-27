@@ -101,13 +101,10 @@
       </div>
       <div class="form-group">
         <label>Categoría</label>
-        <select id="f-cat">
-          <option value="Concierto">🎵 Concierto</option>
-          <option value="Cine">🎬 Cine</option>
-          <option value="Teatro">🎭 Teatro</option>
-          <option value="Exposición">🖼️ Exposición</option>
-          <option value="Otro">✨ Otro</option>
-        </select>
+        <div class="cat-field-row">
+          <select id="f-cat"></select>
+          <button type="button" class="btn-cat-mgr" onclick="openCatManager()" title="Gestionar categorías">⚙️</button>
+        </div>
       </div>
     </div>
     <div class="form-group">
@@ -247,6 +244,20 @@
 </div>
 
 <canvas id="confetti-canvas" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:9997;display:none"></canvas>
+<!-- Category manager -->
+<div id="cat-manager-overlay" class="cat-manager-overlay" onclick="if(event.target===this)closeCatManager()">
+  <div class="cat-manager-panel">
+    <div class="cm-header">
+      <div>
+        <div class="cm-eyebrow">personalización</div>
+        <h2 class="cm-title">Categorías <em>de eventos</em></h2>
+      </div>
+      <button class="stats-close" onclick="closeCatManager()">✕</button>
+    </div>
+    <div id="cat-manager-body" class="cm-body"></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script src="app.js"></script>

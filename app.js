@@ -2236,7 +2236,7 @@ function buildWrappedSlides(evts, year) {
       <div class="ws-eyebrow">tu pasión</div>
       <div class="ws-emoji">${topCat.meta.emoji}</div>
       <div class="ws-big" style="color:${col}">${topCat.v}</div>
-      <div class="ws-label">${catPlural(topCat.c)
+      <div class="ws-label">${catPlural(topCat.c)}</div>
       ${catCts.length>1?`<div class="ws-sub">seguido de ${catCts[1].meta.emoji} ${catCts[1].c} (${catCts[1].v})</div>`:''}
     `});
   }

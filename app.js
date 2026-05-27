@@ -255,28 +255,39 @@ document.addEventListener('keydown', e => {
 
 // ── Data ──
 async function loadEvents() {
-  // Instant render from cache
+  // 1. Render instantly from IDB cache (avoids blank screen)
+  let renderedFromCache = false;
   try {
     const cached = await idbLoadAll();
     if (cached.length) {
       events = cached.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
       render();
+      renderedFromCache = true;
     }
   } catch(_) {}
 
   if (!navigator.onLine) {
     isOnline = false;
     updateOfflineBanner();
-
     if (!events.length) toast('Sin conexión. No hay datos guardados localmente.', true);
     return;
   }
 
+  // 2. Fetch fresh data from Supabase
   const { data, error } = await db.from('events').select('*').order('created_at', { ascending: false });
   if (error) { toast('Error al conectar. Mostrando datos guardados.', true); return; }
-  events = data || [];
+
+  const fresh = data || [];
+
+  // 3. Only re-render if data actually changed (avoids the visible double-load)
+  const changed =
+    !renderedFromCache ||
+    fresh.length !== events.length ||
+    fresh.some((ev, i) => ev.id !== events[i]?.id || ev.updated_at !== events[i]?.updated_at);
+
+  events = fresh;
   await idbSaveAll(events);
-  render();
+  if (changed) render();
   checkAndNotify();
 }
 

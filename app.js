@@ -30,12 +30,14 @@ function daysUntil(dateStr) {
 }
 
 function countdownLabel(days) {
-  if (days < 0)  return null;
-  if (days === 0) return { text: '¡Hoy! 🎉', cls: 'today' };
-  if (days === 1) return { text: 'Mañana',    cls: 'tomorrow' };
-  if (days <= 7)  return { text: `En ${days} días`, cls: 'soon' };
-  if (days <= 30) return { text: `En ${days} días`, cls: '' };
-  return null;
+  if (days < 0)    return null;
+  if (days === 0)  return { text: '¡Hoy! 🎉',               cls: 'today' };
+  if (days === 1)  return { text: 'Mañana',                  cls: 'tomorrow' };
+  if (days <= 7)   return { text: `En ${days} días`,         cls: 'soon' };
+  if (days <= 30)  return { text: `En ${days} días`,         cls: '' };
+  if (days <= 90)  return { text: `En ${Math.ceil(days/7)} semanas`, cls: '' };
+  const months = Math.round(days / 30.5);
+  return { text: `En ${months} ${months === 1 ? 'mes' : 'meses'}`, cls: '' };
 }
 
 
@@ -724,7 +726,7 @@ function renderStats() {
 
 function renderFilters() {
   const years = getYears();
-  const upcomingCount = events.filter(e => e.date && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 90).length;
+  const upcomingCount = events.filter(e => e.date && daysUntil(e.date) >= 0).length;
   const upcomingPill = upcomingCount > 0
     ? (filterUpcoming
       ? `<button class="pill pill-upcoming active" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span><span class="pill-dismiss">✕</span></button>`
@@ -1191,7 +1193,7 @@ function renderNotifPanel() {
   const perm = 'Notification' in window ? Notification.permission : 'unsupported';
 
   const upcoming = events
-    .filter(e => e.date && daysUntil(e.date) !== null && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 30)
+    .filter(e => e.date && daysUntil(e.date) !== null && daysUntil(e.date) >= 0 && daysUntil(e.date) <= 365)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const permBadge = {

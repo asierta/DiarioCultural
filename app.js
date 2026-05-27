@@ -528,6 +528,9 @@ function openForm(ev = null) {
   formRating = ev?.rating || 0;
   const ratingInp = document.getElementById('f-rating');
   if (ratingInp) ratingInp.value = formRating;
+  // Force fresh star buttons on each form open to guarantee clean event listeners
+  const starCont = document.getElementById('star-input');
+  if (starCont) starCont.innerHTML = '';
   renderStars();
   document.getElementById('overlay').classList.add('open');
   setTimeout(() => document.getElementById('f-title').focus(), 300);
@@ -545,36 +548,70 @@ function overlayClick(e) {
   if (e.target === document.getElementById('overlay')) closeForm();
 }
 
-function renderStars() {
-  const display = hoverRating || formRating;
-  // Two explicit buttons per star: left = N-0.5, right = N
-  // Each is 50% wide with overflow:hidden to show the correct half of the ★ glyph
-  document.getElementById('star-input').innerHTML = [1,2,3,4,5].map(i => {
-    const lOn = display >= i - 0.5 ? ' on' : '';
-    const rOn = display >= i       ? ' on' : '';
-    return `<span class="sip">` +
-      `<button type="button" class="sip-l${lOn}" onclick="clickStarVal(${i-.5})" onmouseenter="hoverStarVal(${i-.5})" onmouseleave="leaveStars()" title="${i-.5} ★"><span>★</span></button>` +
-      `<button type="button" class="sip-r${rOn}" onclick="clickStarVal(${i})"   onmouseenter="hoverStarVal(${i})"   onmouseleave="leaveStars()" title="${i} ★"><span>★</span></button>` +
-      `</span>`;
-  }).join('');
+// Builds star buttons once; subsequent calls only update classes (no innerHTML on click)
+function initStarInput() {
+  const container = document.getElementById('star-input');
+  if (!container) return;
+
+  container.innerHTML = [1,2,3,4,5].map(i =>
+    `<span class="sip" data-star="${i}">` +
+    `<button type="button" class="sip-l" data-val="${i - 0.5}" title="${i - 0.5} ★"><span>★</span></button>` +
+    `<button type="button" class="sip-r" data-val="${i}"       title="${i} ★"><span>★</span></button>` +
+    `</span>`
+  ).join('');
+
+  // Per-init flag: if touchend fired, skip the synthetic click that follows on mobile/tablet
+  let touchFired = false;
+
+  container.querySelectorAll('button[data-val]').forEach(btn => {
+    const val = parseFloat(btn.dataset.val);
+
+    btn.addEventListener('touchend', e => {
+      e.preventDefault();          // block synthetic click
+      touchFired = true;
+      setTimeout(() => { touchFired = false; }, 600);
+      setStarRating(formRating === val ? 0 : val);
+    }, { passive: false });
+
+    btn.addEventListener('click', () => {
+      if (touchFired) return;      // already handled by touchend
+      setStarRating(formRating === val ? 0 : val);
+    });
+  });
+
+  // Hover on .sip wrapper → no flicker when cursor moves between left and right halves
+  container.querySelectorAll('.sip').forEach(sip => {
+    const starIdx = parseInt(sip.dataset.star);
+    sip.addEventListener('mouseenter', () => { hoverRating = starIdx; updateStarClasses(); });
+    sip.addEventListener('mouseleave', () => { hoverRating = 0;       updateStarClasses(); });
+  });
 }
 
-function clickStarVal(val) {
-  formRating = (formRating === val) ? 0 : val;
+function setStarRating(val) {
+  formRating  = val;
   hoverRating = 0;
   const inp = document.getElementById('f-rating');
-  if (inp) inp.value = formRating;
-  renderStars();
+  if (inp) inp.value = val;
+  updateStarClasses();
 }
 
-function hoverStarVal(val) {
-  hoverRating = val;
-  renderStars();
+function updateStarClasses() {
+  const display = hoverRating || formRating;
+  document.querySelectorAll('#star-input button[data-val]').forEach(btn => {
+    btn.classList.toggle('on', display >= parseFloat(btn.dataset.val));
+  });
 }
 
-function leaveStars() { hoverRating = 0; renderStars(); }
+// Called from openForm and anywhere that needs to reset the display
+function renderStars() {
+  const container = document.getElementById('star-input');
+  if (!container) return;
+  // Re-init if buttons were wiped (e.g. first open)
+  if (!container.querySelector('button[data-val]')) initStarInput();
+  updateStarClasses();
+}
 
-function setRating(n) { formRating = n; renderStars(); }  // kept for compatibility
+function setRating(n) { setStarRating(n); }  // kept for compatibility
 
 async function saveEvent() {
   if (saving) return;

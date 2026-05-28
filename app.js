@@ -26,27 +26,39 @@ function getCustomCats() {
 
 // Persist to Supabase so all devices stay in sync
 async function saveCustomCatsToDB(list) {
-  try {
-    const { data: { user } } = await db.auth.getUser();
-    if (!user) return;
-    await db.from('user_settings').upsert(
-      { user_id: user.id, custom_cats: list, updated_at: new Date().toISOString() },
+  // Get current session (uses local cache — no network call)
+  const { data: { session } } = await db.auth.getSession();
+  if (!session?.user) return;
+
+  const { error } = await db
+    .from('user_settings')
+    .upsert(
+      { user_id: session.user.id, custom_cats: list, updated_at: new Date().toISOString() },
       { onConflict: 'user_id' }
     );
-  } catch(_) {}
+
+  if (error) {
+    console.error('saveCustomCatsToDB:', error);
+    toast('Error al sincronizar categorías (' + error.message + ')', true);
+  }
 }
 
 // Load from Supabase, fall back to localStorage cache
 async function loadCustomCatsFromDB() {
-  try {
-    const { data, error } = await db.from('user_settings').select('custom_cats').single();
-    if (!error && Array.isArray(data?.custom_cats)) {
-      localStorage.setItem('dc-custom-cats', JSON.stringify(data.custom_cats));
-      loadCats();
-      return;
-    }
-  } catch(_) {}
-  // Fallback: use whatever is in localStorage
+  // maybeSingle() returns null (no error) when row doesn't exist yet
+  const { data, error } = await db
+    .from('user_settings')
+    .select('custom_cats')
+    .maybeSingle();
+
+  if (error) {
+    console.error('loadCustomCatsFromDB:', error);
+  }
+
+  if (!error && Array.isArray(data?.custom_cats)) {
+    localStorage.setItem('dc-custom-cats', JSON.stringify(data.custom_cats));
+  }
+  // Always call loadCats() so CATS reflects current state
   loadCats();
 }
 

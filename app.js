@@ -1626,7 +1626,7 @@ function openCatManager() {
 function closeCatManager() {
   document.getElementById('cat-manager-overlay').classList.remove('open');
   rebuildCatSelect();
-  renderFilters();
+  render();
 }
 
 function renderCatManager() {
@@ -1661,7 +1661,7 @@ function renderCatManager() {
     <div class="cm-section">
       <div class="cm-section-lbl">Añadir categoría</div>
       <div class="cm-add-row">
-        <input type="text" id="cm-emoji" placeholder="🎪" maxlength="4" class="cm-emoji-inp" autocomplete="off"/>
+        <input type="text" id="cm-emoji" placeholder="🎪" class="cm-emoji-inp" autocomplete="off"/>
         <input type="text" id="cm-name"  placeholder="Nombre…" class="cm-name-inp" autocomplete="off"
                onkeydown="if(event.key==='Enter')submitNewCat()"/>
         <button type="button" class="cm-add-btn" onclick="submitNewCat()">Añadir</button>
@@ -1679,17 +1679,21 @@ function submitNewCat() {
   if (CATS[name]) { toast(`La categoría "${name}" ya existe`, true); return; }
   if (addCustomCat(name, emoji)) {
     toast(`✓ Categoría "${name}" añadida`);
-    renderCatManager();
+    renderCatManager();    // update manager list
+    rebuildCatSelect();    // update form select immediately
+    render();              // update filter bar + panel
   }
 }
 
 function confirmDeleteCat(name) {
   if (!confirm(`¿Eliminar la categoría "${name}"?
 Los eventos existentes con esta categoría no se verán afectados.`)) return;
+  if (filterCat === name) filterCat = 'Todos';
   deleteCustomCat(name);
   renderCatManager();
+  rebuildCatSelect();
+  render();
   toast(`Categoría "${name}" eliminada`);
-  renderFilters();
 }
 
 // ── Detail view ──

@@ -360,20 +360,24 @@ async function loadEvents() {
 
   const fresh = data || [];
 
-  // 3. Load custom categories from DB (syncs across devices)
+  // 3. Snapshot CATS before loading from DB so we can detect changes
+  const catKeysBefore = Object.keys(CATS).sort().join(',');
+
+  // 4. Load custom categories from DB (syncs across devices)
   await loadCustomCatsFromDB();
 
-  // 4. Collect any unknown cats from events (from other devices) and add them to CATS
+  // 5. Recover any unknown cats from events (created on another device)
   fresh.forEach(ev => {
     if (ev.cat && !CATS[ev.cat]) {
-      // Unknown cat: recover it with a neutral style
       CATS[ev.cat] = { emoji: '✦', color: CUSTOM_COLORS[Object.keys(CATS).length % CUSTOM_COLORS.length] };
     }
   });
 
-  // 5. Only re-render if data actually changed (avoids the visible double-load)
+  // 6. Re-render if events OR categories changed
+  const catsChanged = Object.keys(CATS).sort().join(',') !== catKeysBefore;
   const changed =
     !renderedFromCache ||
+    catsChanged ||
     fresh.length !== events.length ||
     fresh.some((ev, i) => ev.id !== events[i]?.id || ev.updated_at !== events[i]?.updated_at);
 

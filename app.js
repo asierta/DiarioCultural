@@ -23,9 +23,37 @@ const CUSTOM_COLORS = ['#e8a87c','#7ce8c4','#e87ca8','#7cb4e8','#c4e87c',
 function getCustomCats() {
   try { return JSON.parse(localStorage.getItem('dc-custom-cats') || '[]'); } catch(_) { return []; }
 }
-function saveCustomCats(list) {
-  localStorage.setItem('dc-custom-cats', JSON.stringify(list));
+
+// Persist to Supabase so all devices stay in sync
+async function saveCustomCatsToDB(list) {
+  try {
+    const { data: { user } } = await db.auth.getUser();
+    if (!user) return;
+    await db.from('user_settings').upsert(
+      { user_id: user.id, custom_cats: list, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' }
+    );
+  } catch(_) {}
+}
+
+// Load from Supabase, fall back to localStorage cache
+async function loadCustomCatsFromDB() {
+  try {
+    const { data, error } = await db.from('user_settings').select('custom_cats').single();
+    if (!error && Array.isArray(data?.custom_cats)) {
+      localStorage.setItem('dc-custom-cats', JSON.stringify(data.custom_cats));
+      loadCats();
+      return;
+    }
+  } catch(_) {}
+  // Fallback: use whatever is in localStorage
   loadCats();
+}
+
+function saveCustomCats(list) {
+  localStorage.setItem('dc-custom-cats', JSON.stringify(list)); // instant local cache
+  loadCats();
+  saveCustomCatsToDB(list);                                      // async sync to DB
 }
 function loadCats() {
   CATS = { ...BUILTIN_CATS };
@@ -320,7 +348,18 @@ async function loadEvents() {
 
   const fresh = data || [];
 
-  // 3. Only re-render if data actually changed (avoids the visible double-load)
+  // 3. Load custom categories from DB (syncs across devices)
+  await loadCustomCatsFromDB();
+
+  // 4. Collect any unknown cats from events (from other devices) and add them to CATS
+  fresh.forEach(ev => {
+    if (ev.cat && !CATS[ev.cat]) {
+      // Unknown cat: recover it with a neutral style
+      CATS[ev.cat] = { emoji: '✦', color: CUSTOM_COLORS[Object.keys(CATS).length % CUSTOM_COLORS.length] };
+    }
+  });
+
+  // 5. Only re-render if data actually changed (avoids the visible double-load)
   const changed =
     !renderedFromCache ||
     fresh.length !== events.length ||

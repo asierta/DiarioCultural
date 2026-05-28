@@ -745,11 +745,11 @@ async function deleteEvent(id) {
 }
 
 // ── Filters ──
-function setFilter(c)           { filterCat = c; filterUpcoming = false; render(); }
-function toggleUpcoming()       { filterUpcoming = !filterUpcoming; if (filterUpcoming) { hideUpcoming = false; filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; } render(); }
-function toggleHideUpcoming()   { hideUpcoming = !hideUpcoming; if (hideUpcoming) filterUpcoming = false; render(); }
-function setYear(y)             { filterYear = y; render(); }
-function setCompanionFilter(c)  { const idx = filterCompanion.indexOf(c); if (idx === -1) filterCompanion.push(c); else filterCompanion.splice(idx, 1); render(); }
+function setFilter(c)           { filterCat = c; filterUpcoming = false; render(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
+function toggleUpcoming()       { filterUpcoming = !filterUpcoming; if (filterUpcoming) { hideUpcoming = false; filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; } render(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
+function toggleHideUpcoming()   { hideUpcoming = !hideUpcoming; if (hideUpcoming) filterUpcoming = false; render(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
+function setYear(y)             { filterYear = y; render(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
+function setCompanionFilter(c)  { const idx = filterCompanion.indexOf(c); if (idx === -1) filterCompanion.push(c); else filterCompanion.splice(idx, 1); render(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
 function getYears()             { return [...new Set(events.map(e => e.date?.slice(0,4)).filter(Boolean))].sort((a,b) => b-a); }
 
 function getTopCompanions(limit = 6) {
@@ -777,37 +777,110 @@ function renderStats() {
 }
 
 function renderFilters() {
-  const years = getYears();
-  const upcomingCount = events.filter(e => e.date && daysUntil(e.date) >= 0).length;
-  const upcomingPill = upcomingCount > 0
-    ? (filterUpcoming
-      ? `<button class="pill pill-upcoming active" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span><span class="pill-dismiss">✕</span></button>`
-      : `<button class="pill pill-upcoming" onclick="toggleUpcoming()">🗓 Próximos <span class="pill-count">${upcomingCount}</span></button>`) +
-    `<button class="pill pill-hide-upcoming${hideUpcoming ? ' active' : ''}" onclick="toggleHideUpcoming()" title="${hideUpcoming ? 'Mostrar todos' : 'Ocultar eventos futuros'}">${hideUpcoming ? '🙈 Futuros ocultos <span class="pill-dismiss">✕</span>' : '🙈 Ocultar futuros'}</button><div class="filter-divider"></div>`
-    : '';
-  const catPills = ['Todos', ...Object.keys(CATS)].map(c =>
-    `<button class="pill${filterCat===c?' active':''}" onclick="setFilter('${c}')">${c==='Todos'?'Todos':CATS[c].emoji+' '+c}</button>`
-  ).join('');
-  const yearPills = years.length
-    ? '<div class="filter-divider"></div>' + years.map(y =>
-        `<button class="pill year${filterYear===y?' active':''}" onclick="setYear('${y}')">${y}</button>`
-      ).join('')
-    : '';
-  const sortControl = `
-    <div class="filter-spacer"></div>
-    <select class="sort-select" onchange="onSort(event)" title="Ordenar">
-      <option value="recent"  ${sortBy==='recent' ?'selected':''}>↓ Recientes</option>
+  // Count active filters for badge
+  const activeFilters = [
+    filterCat !== 'Todos',
+    filterYear !== 'Todos',
+    filterCompanion.length > 0,
+    filterUpcoming,
+    hideUpcoming,
+  ].filter(Boolean);
+
+  // Active chips shown in the bar (each removable with ✕)
+  const chips = [];
+  if (filterUpcoming)
+    chips.push(`<button class="fbar-chip chip-upcoming" onclick="toggleUpcoming()">🗓 Próximos <span class="chip-x">✕</span></button>`);
+  if (hideUpcoming)
+    chips.push(`<button class="fbar-chip chip-hide" onclick="toggleHideUpcoming()">🙈 Sin futuros <span class="chip-x">✕</span></button>`);
+  if (filterCat !== 'Todos')
+    chips.push(`<button class="fbar-chip" onclick="setFilter('Todos')">${CATS[filterCat]?.emoji||''} ${escHtml(filterCat)} <span class="chip-x">✕</span></button>`);
+  if (filterYear !== 'Todos')
+    chips.push(`<button class="fbar-chip" onclick="setYear('Todos')">📅 ${filterYear} <span class="chip-x">✕</span></button>`);
+  filterCompanion.forEach(c =>
+    chips.push(`<button class="fbar-chip chip-companion" onclick="setCompanionFilter('${c.replace(/'/g,"\'")}')">👥 ${escHtml(c)} <span class="chip-x">✕</span></button>`)
+  );
+
+  const badge = activeFilters.length ? `<span class="fbar-badge">${activeFilters.length}</span>` : '';
+
+  document.getElementById('filters').innerHTML = `
+    <div class="fbar-chips">${chips.join('')}</div>
+    <button class="btn-open-filters${activeFilters.length ? ' fbar-active' : ''}" onclick="openFilterPanel()">
+      <span>⊟</span> Filtros${badge}
+    </button>
+    <div class="fbar-sep"></div>
+    <select class="sort-select" onchange="onSort(event)">
+      <option value="recent"  ${sortBy==='recent' ?'selected':''}>↓ Añadidos</option>
       <option value="newest"  ${sortBy==='newest' ?'selected':''}>↓ Fecha</option>
       <option value="oldest"  ${sortBy==='oldest' ?'selected':''}>↑ Fecha</option>
       <option value="rating"  ${sortBy==='rating' ?'selected':''}>★ Valoración</option>
       <option value="title"   ${sortBy==='title'  ?'selected':''}>A→Z Título</option>
     </select>`;
-  const companionPills = getTopCompanions().length
-    ? '<div class="filter-divider"></div>' + getTopCompanions().map(c =>
-        `<button class="pill${filterCompanion.includes(c)?' active companion-active':''}" onclick="setCompanionFilter('${c.replace(/'/g, "\\'")}')">👥 ${escHtml(c)}</button>`
-      ).join('')
-    : '';
-  document.getElementById('filters').innerHTML = upcomingPill + catPills + yearPills + companionPills + sortControl;
+}
+
+// ── Filter panel ──────────────────────────────────────────────────────────────
+function openFilterPanel() {
+  renderFilterPanel();
+  document.getElementById('filter-panel-overlay').classList.add('open');
+}
+function closeFilterPanel() {
+  document.getElementById('filter-panel-overlay').classList.remove('open');
+}
+
+function renderFilterPanel() {
+  const years = getYears();
+  const upcomingCount = events.filter(e => e.date && daysUntil(e.date) >= 0).length;
+  const companions = getTopCompanions(16);
+  const activeCount = [filterCat !== 'Todos', filterYear !== 'Todos',
+    filterCompanion.length > 0, filterUpcoming, hideUpcoming].filter(Boolean).length;
+
+  const fp = (label, content) => `
+    <div class="fp-section">
+      <div class="fp-section-lbl">${label}</div>
+      <div class="fp-pills">${content}</div>
+    </div>`;
+
+  const pill = (label, active, onclick, extraCls='') =>
+    `<button class="fp-pill${active ? ' active' : ''}${extraCls ? ' ' + extraCls : ''}" onclick="${onclick};renderFilterPanel()">${label}</button>`;
+
+  const upcoming = upcomingCount > 0 ? fp('Próximos', [
+    pill(`🗓 Solo próximos <span class="fp-count">${upcomingCount}</span>`, filterUpcoming, "toggleUpcoming()", 'fp-upcoming'),
+    pill('🙈 Ocultar futuros', hideUpcoming, "toggleHideUpcoming()", 'fp-hide'),
+  ].join('')) : '';
+
+  const cats = fp('Categoría',
+    ['Todos', ...Object.keys(CATS)].map(c =>
+      pill(c === 'Todos' ? 'Todas' : `${CATS[c].emoji} ${c}`, filterCat === c, `setFilter('${c}')`)
+    ).join('')
+  );
+
+  const yrs = years.length ? fp('Año',
+    [pill('Todos los años', filterYear === 'Todos', "setYear('Todos')"),
+     ...years.map(y => pill(y, filterYear === y, `setYear('${y}')`))]
+    .join('')
+  ) : '';
+
+  const comps = companions.length ? fp('Compañeros',
+    companions.map(c =>
+      pill(`👥 ${escHtml(c)}`, filterCompanion.includes(c), `setCompanionFilter('${c.replace(/'/g,"\'")}')`, 'fp-companion')
+    ).join('')
+  ) : '';
+
+  const sorts = fp('Ordenar por', [
+    { v:'newest', l:'↓ Fecha (reciente)' },
+    { v:'oldest', l:'↑ Fecha (antiguo)'  },
+    { v:'recent', l:'↓ Añadidos'         },
+    { v:'rating', l:'★ Valoración'       },
+    { v:'title',  l:'A → Z Título'       },
+  ].map(s => pill(s.l, sortBy === s.v, `sortBy='${s.v}';onSort({target:{value:'${s.v}'}})`)).join(''));
+
+  document.getElementById('fp-body').innerHTML = upcoming + cats + yrs + comps + sorts;
+  document.getElementById('fp-reset').style.display = activeCount > 0 ? 'flex' : 'none';
+}
+
+function resetAllFilters() {
+  filterCat = 'Todos'; filterYear = 'Todos';
+  filterCompanion = []; filterUpcoming = false; hideUpcoming = false;
+  render(); renderFilterPanel();
 }
 
 function renderGrid() {

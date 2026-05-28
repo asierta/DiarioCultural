@@ -258,6 +258,23 @@
   </div>
 </div>
 
+<!-- Filter panel -->
+<div id="filter-panel-overlay" class="filter-panel-overlay" onclick="if(event.target===this)closeFilterPanel()">
+  <div class="filter-panel">
+    <div class="fp-header">
+      <div>
+        <div class="fp-eyebrow">búsqueda</div>
+        <h2 class="fp-title">Filtros <em>&amp; orden</em></h2>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="fp-reset" class="fp-reset-btn" onclick="resetAllFilters()" style="display:none">↺ Restablecer</button>
+        <button class="stats-close" onclick="closeFilterPanel()">✕</button>
+      </div>
+    </div>
+    <div id="fp-body" class="fp-body"></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script src="app.js"></script>

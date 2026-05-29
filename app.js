@@ -428,10 +428,12 @@ function setView(mode) {
 }
 
 // ── Search ──
+let _searchTimer = null;
 function onSearch(e) {
   searchQuery = e.target.value.trim();
   document.getElementById('search-clear').style.display = searchQuery ? 'block' : 'none';
-  renderGrid();
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(renderGrid, 180);
 }
 
 function clearSearch() {
@@ -800,11 +802,11 @@ async function deleteEvent(id) {
 }
 
 // ── Filters ──
-function setFilter(c)           { filterCat = c; filterUpcoming = false; render(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
-function toggleUpcoming()       { filterUpcoming = !filterUpcoming; if (filterUpcoming) { hideUpcoming = false; filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; } render(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
-function toggleHideUpcoming()   { hideUpcoming = !hideUpcoming; if (hideUpcoming) filterUpcoming = false; render(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
-function setYear(y)             { filterYear = y; render(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
-function setCompanionFilter(c)  { const idx = filterCompanion.indexOf(c); if (idx === -1) filterCompanion.push(c); else filterCompanion.splice(idx, 1); render(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
+function setFilter(c)           { filterCat = c; filterUpcoming = false; renderView(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
+function toggleUpcoming()       { filterUpcoming = !filterUpcoming; if (filterUpcoming) { hideUpcoming = false; filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; } renderView(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
+function toggleHideUpcoming()   { hideUpcoming = !hideUpcoming; if (hideUpcoming) filterUpcoming = false; renderView(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
+function setYear(y)             { filterYear = y; renderView(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
+function setCompanionFilter(c)  { const idx = filterCompanion.indexOf(c); if (idx === -1) filterCompanion.push(c); else filterCompanion.splice(idx, 1); renderView(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
 function getYears()             { return [...new Set(events.map(e => e.date?.slice(0,4)).filter(Boolean))].sort((a,b) => b-a); }
 
 function getTopCompanions(limit = 6) {
@@ -814,7 +816,8 @@ function getTopCompanions(limit = 6) {
 }
 
 // ── Render ──
-function render() { renderStats(); renderFilters(); renderGrid(); renderTodayWidget(); }
+function render()     { renderStats(); renderFilters(); renderGrid(); renderTodayWidget(); }
+function renderView() { renderFilters(); renderGrid(); }   // filters/sort only — skips stats & widget
 
 function renderStats() {
   const total = events.length;
@@ -935,7 +938,7 @@ function renderFilterPanel() {
 function resetAllFilters() {
   filterCat = 'Todos'; filterYear = 'Todos';
   filterCompanion = []; filterUpcoming = false; hideUpcoming = false;
-  render(); renderFilterPanel();
+  renderView(); renderFilterPanel();
 }
 
 function renderGrid() {

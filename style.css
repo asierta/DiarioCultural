@@ -70,6 +70,7 @@ body::before {
   position: absolute;
   border-radius: 50%;
   will-change: transform;
+  isolation: isolate;
 }
 
 /* Orb 1 — Purple, top-left */
@@ -267,10 +268,8 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
    CARDS — GLASSMORPHISM
    ════════════════════════════════════════ */
 .event-card {
-  /* Semi-transparent so the coloured orbs behind show through the blur */
-  background: rgba(10,9,13,.42);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: rgba(16,14,20,.78);
+  /* No backdrop-filter on cards — too many cards = GPU choke on mobile */
   border: 1px solid rgba(255,255,255,.1);
   border-radius: var(--r);
   overflow: hidden;
@@ -1291,9 +1290,7 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
 
 /* ── Day cell ── */
 .cal-cell {
-  background: rgba(10,9,13,.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(16,14,20,.78);
   border: 1px solid rgba(255,255,255,.05);
   border-radius: 10px;
   padding: 7px 6px 6px;
@@ -1527,7 +1524,7 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
 .tw-card {
   flex-shrink: 0;
   width: 170px;
-  background: rgba(18,16,22,.7);
+  background: rgba(20,18,24,.88);
   border: 1px solid rgba(255,255,255,.08);
   border-radius: var(--r-sm);
   overflow: hidden;
@@ -1999,7 +1996,6 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
 .fp-pill {
   display: inline-flex; align-items: center; gap: 5px;
   background: rgba(255,255,255,.05);
-  backdrop-filter: blur(8px);
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 20px;
   padding: 7px 16px;
@@ -2030,3 +2026,8 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
   padding: 1px 6px; font-size: 10px;
 }
 .fp-pill.active .fp-count { background: rgba(0,0,0,.15); }
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-orb { animation: none !important; }
+  .event-card { transition: none !important; }
+}

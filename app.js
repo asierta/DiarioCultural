@@ -1754,8 +1754,85 @@ Los eventos existentes con esta categoría no se verán afectados.`)) return;
   toast(`Categoría "${name}" eliminada`);
 }
 
+
+// ── Action sheet (long press en tarjeta) ─────────────────────────────────────
+
+let _lpTimer   = null;   // long press timer
+let _lpFired   = false;  // true when action sheet opened via long press
+let _lpMoved   = false;  // true if finger moved (scroll) — cancel long press
+
+// Event delegation: one listener for all cards
+document.addEventListener('touchstart', e => {
+  const card = e.target.closest('.event-card');
+  if (!card) return;
+  const m = card.getAttribute('onclick')?.match(/openDetail\((\d+)\)/);
+  if (!m) return;
+  const id = parseInt(m[1]);
+  _lpMoved = false;
+  _lpTimer = setTimeout(() => {
+    if (_lpMoved) return;
+    _lpFired = true;
+    navigator.vibrate?.(25);   // haptic feedback (Android; iOS silent)
+    openCardActions(id);
+  }, 430);
+}, { passive: true });
+
+document.addEventListener('touchmove',  () => { _lpMoved = true; clearTimeout(_lpTimer); }, { passive: true });
+document.addEventListener('touchend',   () => { clearTimeout(_lpTimer); }, { passive: true });
+document.addEventListener('touchcancel',() => { clearTimeout(_lpTimer); }, { passive: true });
+
+function openCardActions(id) {
+  const ev  = events.find(e => e.id === id);
+  if (!ev) return;
+  const cat = CATS[ev.cat] || CATS['Otro'];
+  const loc = [ev.venue, ev.city].filter(Boolean).join(' · ');
+  const days = daysUntil(ev.date);
+  const cd   = days !== null && days >= 0 ? countdownLabel(days) : null;
+
+  document.getElementById('cas-panel').innerHTML = `
+    <div class="cas-header">
+      <span class="cas-cat-emoji">${cat.emoji}</span>
+      <div class="cas-header-text">
+        <div class="cas-ev-title">${escHtml(ev.title)}</div>
+        <div class="cas-ev-meta">
+          ${ev.date ? fmtDate(ev.date) : ''}
+          ${cd ? ` · <span class="cas-cd ${cd.cls}">${cd.text}</span>` : ''}
+          ${loc ? `<br>📍 ${escHtml(loc)}` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="cas-actions">
+      <button class="cas-btn" onclick="closeCardActions();setTimeout(()=>openDetail(${id}),80)">
+        <span class="cas-icon">👁</span><span>Ver detalles</span>
+      </button>
+      <button class="cas-btn" onclick="closeCardActions();setTimeout(()=>openForm(events.find(e=>e.id===${id})),80)">
+        <span class="cas-icon">✏️</span><span>Editar</span>
+      </button>
+      <button class="cas-btn" onclick="closeCardActions();setTimeout(()=>duplicateEvent(${id}),80)">
+        <span class="cas-icon">📋</span><span>Duplicar</span>
+      </button>
+      <button class="cas-btn" onclick="closeCardActions();shareEvent(${id})">
+        <span class="cas-icon">📤</span><span>Compartir</span>
+      </button>
+      <div class="cas-separator"></div>
+      <button class="cas-btn cas-btn-del" onclick="closeCardActions();setTimeout(()=>deleteEvent(${id}),80)">
+        <span class="cas-icon">🗑</span><span>Eliminar evento</span>
+      </button>
+    </div>
+    <button class="cas-cancel" onclick="closeCardActions()">Cancelar</button>`;
+
+  document.getElementById('card-action-sheet').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeCardActions() {
+  document.getElementById('card-action-sheet').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
 // ── Detail view ──
 function openDetail(id) {
+  if (_lpFired) { _lpFired = false; return; }  // long press already handled
   const ev = events.find(e => e.id === id);
   if (!ev) return;
   const cat = CATS[ev.cat] || CATS['Otro'];

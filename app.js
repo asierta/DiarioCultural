@@ -644,12 +644,13 @@ function openForm(ev = null) {
   if (starCont) starCont.innerHTML = '';
   renderStars();
   document.getElementById('overlay').classList.add('open');
-  setTimeout(() => document.getElementById('f-title').focus(), 300);
+  showStep(1);
 }
 
 function closeForm() {
   document.getElementById('overlay').classList.remove('open');
   editingId = null;
+  currentStep = 1;
 }
 
 
@@ -770,7 +771,7 @@ async function saveEvent() {
 
   if (editingId) {
     const { data, error } = await db.from('events').update(payload).eq('id', editingId).select().single();
-    saving = false; btn.disabled = false; btn.textContent = 'Guardar cambios';
+    saving = false; btn.disabled = false; btn.textContent = '✓ Guardar evento';
     if (error) { toast('Error al actualizar', true); return; }
     events = events.map(e => e.id === editingId ? data : e);
     await idbUpsert(data);
@@ -778,7 +779,7 @@ async function saveEvent() {
     toast('✓ Evento actualizado');
   } else {
     const { data, error } = await db.from('events').insert([payload]).select().single();
-    saving = false; btn.disabled = false; btn.textContent = 'Guardar evento';
+    saving = false; btn.disabled = false; btn.textContent = '✓ Guardar evento';
     if (error) { toast('Error al guardar', true); return; }
     events.unshift(data);
     await idbUpsert(data);
@@ -1828,6 +1829,69 @@ function openCardActions(id) {
 function closeCardActions() {
   document.getElementById('card-action-sheet').classList.remove('open');
   document.body.style.overflow = '';
+}
+
+
+// ── Multi-step form ───────────────────────────────────────────────────────────
+let currentStep = 1;
+const STEP_LABELS = ['¿Qué viste?', '¿Dónde fue?', 'El recuerdo', '¿Qué te pareció?'];
+const TOTAL_STEPS = 4;
+
+function showStep(n) {
+  currentStep = n;
+  for (let i = 1; i <= TOTAL_STEPS; i++) {
+    const el = document.getElementById(`step-${i}`);
+    if (el) el.style.display = i === n ? 'block' : 'none';
+    const dot = document.querySelector(`.fp-step[data-s="${i}"]`);
+    if (dot) {
+      dot.classList.toggle('active', i === n);
+      dot.classList.toggle('done',   i < n);
+    }
+  }
+  // Update step label
+  const lbl = document.getElementById('step-label');
+  if (lbl) lbl.textContent = `Paso ${n} de ${TOTAL_STEPS} · ${STEP_LABELS[n - 1]}`;
+
+  // Back button
+  const back = document.getElementById('form-back-btn');
+  if (back) back.textContent = n === 1 ? 'Cancelar' : '← Anterior';
+
+  // Next / Save button
+  const next = document.getElementById('save-btn');
+  if (next) {
+    next.textContent  = n === TOTAL_STEPS ? '✓ Guardar evento' : 'Siguiente →';
+    next.style.flex   = n === TOTAL_STEPS ? '2' : '1';
+  }
+
+  // Focus first input of the new step
+  const step = document.getElementById(`step-${n}`);
+  const first = step?.querySelector('input:not([type=hidden]):not([readonly]), select, textarea');
+  setTimeout(() => first?.focus(), 150);
+
+  // Re-init stars when landing on step 4
+  if (n === 4 && document.getElementById('star-input')) {
+    const sc = document.getElementById('star-input');
+    sc.innerHTML = '';
+    renderStars();
+  }
+}
+
+function formNext() {
+  if (currentStep === TOTAL_STEPS) {
+    saveEvent();
+  } else {
+    // Validate step 1 before advancing
+    if (currentStep === 1 && !document.getElementById('f-title')?.value.trim()) {
+      document.getElementById('f-title')?.focus();
+      return;
+    }
+    showStep(currentStep + 1);
+  }
+}
+
+function formBack() {
+  if (currentStep === 1) closeForm();
+  else showStep(currentStep - 1);
 }
 
 // ── Detail view ──

@@ -2113,3 +2113,68 @@ main { padding: 1.25rem; max-width: 900px; margin: 0 auto; position: relative; }
   transition: background .12s;
 }
 .cas-cancel:active { background: rgba(255,255,255,.1); }
+
+
+/* ════════════════════════════════════════
+   MULTI-STEP FORM
+   ════════════════════════════════════════ */
+
+/* Step progress bar */
+.form-progress {
+  display: flex; align-items: center;
+  gap: 0; margin-bottom: 1.1rem;
+}
+.fp-step {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: rgba(255,255,255,.12);
+  border: 2px solid rgba(255,255,255,.12);
+  flex-shrink: 0; transition: all .25s;
+}
+.fp-step.done {
+  background: rgba(201,148,58,.5);
+  border-color: var(--amber);
+}
+.fp-step.active {
+  background: var(--amber);
+  border-color: var(--amber);
+  box-shadow: 0 0 10px rgba(201,148,58,.6);
+  transform: scale(1.25);
+}
+.fp-line {
+  flex: 1; height: 2px;
+  background: rgba(255,255,255,.1);
+  transition: background .25s;
+}
+.fp-step.done + .fp-line { background: rgba(201,148,58,.4); }
+
+/* Step label above title */
+.form-step-meta { margin-bottom: .85rem; }
+.step-label-text {
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--amber); font-weight: 500; display: block; margin-bottom: .25rem;
+}
+
+/* Step panels — hidden by default, JS controls display */
+.form-step { display: none; animation: fadeUp .22s ease both; }
+
+/* Step 4 (rating): center the stars on mobile */
+#step-4 .stars-wrap {
+  justify-content: center;
+  margin-top: .75rem;
+}
+#step-4 .form-group label {
+  text-align: center; display: block;
+}
+
+/* Bigger inputs on mobile for easier touch */
+@media (max-width: 600px) {
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    font-size: 16px;   /* prevents iOS zoom-in on focus */
+    padding: 13px 14px;
+  }
+  .form-group textarea { min-height: 100px; }
+  .form-actions { gap: 10px; margin-top: 1.5rem; }
+  .btn-cancel, .btn-save { padding: 15px; font-size: 15px; }
+}

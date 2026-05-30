@@ -89,12 +89,29 @@
 <div class="overlay" id="overlay" onclick="overlayClick(event)">
   <div class="sheet">
     <div class="sheet-handle"></div>
-    <h2 class="sheet-title" id="sheet-title">Nuevo evento</h2>
-    <div class="form-group">
-      <label>Título *</label>
-      <input type="text" id="f-title" placeholder="Nombre del evento, obra o película…"/>
+
+    <!-- Step progress bar -->
+    <div class="form-progress">
+      <div class="fp-step active" data-s="1"></div>
+      <div class="fp-line"></div>
+      <div class="fp-step" data-s="2"></div>
+      <div class="fp-line"></div>
+      <div class="fp-step" data-s="3"></div>
+      <div class="fp-line"></div>
+      <div class="fp-step" data-s="4"></div>
     </div>
-    <div class="form-row">
+
+    <div class="form-step-meta">
+      <span id="step-label" class="step-label-text"></span>
+      <h2 class="sheet-title" id="sheet-title">Nuevo evento</h2>
+    </div>
+
+    <!-- ── Step 1: Lo básico ── -->
+    <div class="form-step" id="step-1">
+      <div class="form-group">
+        <label>Título *</label>
+        <input type="text" id="f-title" placeholder="Nombre del evento, obra o película…"/>
+      </div>
       <div class="form-group">
         <label>Fecha</label>
         <input type="date" id="f-date"/>
@@ -107,11 +124,13 @@
         </div>
       </div>
     </div>
-    <div class="form-group">
-      <label>Lugar / Sala</label>
-      <input type="text" id="f-venue" placeholder="Busca un teatro, cine, sala…" autocomplete="off"/>
-    </div>
-    <div class="form-row">
+
+    <!-- ── Step 2: El lugar ── -->
+    <div class="form-step" id="step-2">
+      <div class="form-group">
+        <label>Lugar / Sala</label>
+        <input type="text" id="f-venue" placeholder="Busca un teatro, cine, sala…" autocomplete="off"/>
+      </div>
       <div class="form-group">
         <label>Ciudad</label>
         <input type="text" id="f-city" placeholder="Se rellena automáticamente"/>
@@ -120,38 +139,47 @@
         <label>Dirección</label>
         <input type="text" id="f-address" placeholder="Se rellena automáticamente" readonly style="color:var(--text3);"/>
       </div>
+      <input type="hidden" id="f-maps-url"/>
     </div>
-    <input type="hidden" id="f-maps-url"/>
-    <div class="form-group">
-      <label>Imagen</label>
-      <label class="img-upload-label">
-        <input type="file" id="f-image" accept="image/*" onchange="onImageSelected(event)"/>
-        <span style="font-size:20px;">🖼️</span>
-        <span style="font-size:13px; color:var(--text2);" id="img-label-text">Seleccionar imagen…</span>
-      </label>
-      <div class="img-thumb-wrap" id="img-thumb-wrap" onclick="openFocusPicker()">
-        <img id="img-thumb" alt="Vista previa"/>
-        <div class="img-thumb-overlay"><span>🎯 Ajustar encuadre</span></div>
-        <button class="img-remove-btn" onclick="removeImage(event)">✕</button>
+
+    <!-- ── Step 3: Recuerdos ── -->
+    <div class="form-step" id="step-3">
+      <div class="form-group">
+        <label>Imagen</label>
+        <label class="img-upload-label">
+          <input type="file" id="f-image" accept="image/*" onchange="onImageSelected(event)"/>
+          <span style="font-size:20px;">🖼️</span>
+          <span style="font-size:13px; color:var(--text2);" id="img-label-text">Seleccionar imagen…</span>
+        </label>
+        <div class="img-thumb-wrap" id="img-thumb-wrap" onclick="openFocusPicker()">
+          <img id="img-thumb" alt="Vista previa"/>
+          <div class="img-thumb-overlay"><span>🎯 Ajustar encuadre</span></div>
+          <button class="img-remove-btn" onclick="removeImage(event)">✕</button>
+        </div>
+        <div id="img-progress"><div id="img-progress-bar"></div></div>
       </div>
-      <div id="img-progress"><div id="img-progress-bar"></div></div>
+      <div class="form-group">
+        <label>Notas</label>
+        <textarea id="f-notes" placeholder="Impresiones, qué te pareció…"></textarea>
+      </div>
+      <div class="form-group">
+        <label>¿Con quién fuiste?</label>
+        <input type="text" id="f-companions" placeholder="María, Juan, Sofía…"/>
+      </div>
     </div>
-    <div class="form-group">
-      <label>Notas</label>
-      <textarea id="f-notes" placeholder="Impresiones, qué te pareció…"></textarea>
+
+    <!-- ── Step 4: Valoración ── -->
+    <div class="form-step" id="step-4">
+      <div class="form-group">
+        <label>Valoración</label>
+        <input type="hidden" id="f-rating" value="0"/>
+        <div class="stars-wrap" id="star-input"></div>
+      </div>
     </div>
-    <div class="form-group">
-      <label>¿Con quién fuiste?</label>
-      <input type="text" id="f-companions" placeholder="María, Juan, Sofía…"/>
-    </div>
-    <div class="form-group">
-      <label>Valoración</label>
-      <input type="hidden" id="f-rating" value="0"/>
-      <div class="stars-wrap" id="star-input"></div>
-    </div>
+
     <div class="form-actions">
-      <button class="btn-cancel" onclick="closeForm()">Cancelar</button>
-      <button class="btn-save" id="save-btn" onclick="saveEvent()">Guardar evento</button>
+      <button class="btn-cancel" id="form-back-btn" onclick="formBack()">Cancelar</button>
+      <button class="btn-save"   id="save-btn"      onclick="formNext()">Siguiente →</button>
     </div>
   </div>
 </div>

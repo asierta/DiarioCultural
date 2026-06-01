@@ -352,7 +352,7 @@ function openForm(ev = null) {
   formRating = ev?.rating || 0;
   const ratingInp = document.getElementById('f-rating'); if (ratingInp) ratingInp.value = formRating;
   const starCont = document.getElementById('star-input'); if (starCont) starCont.innerHTML = '';
-  renderStars(); document.getElementById('overlay').classList.add('open'); showStep(1);
+  renderStars(); document.getElementById('overlay').classList.add('open'); showStep(1); setTimeout(()=>_attachSwipe(document.querySelector('.sheet'), closeForm), 50);
 }
 function closeForm() { document.getElementById('overlay').classList.remove('open'); editingId = null; currentStep = 1; }
 function overlayClick(e) { if (e.target === document.getElementById('overlay')) closeForm(); }
@@ -414,12 +414,74 @@ async function saveEvent() {
   }
   closeForm(); render();
 }
+// ── MEJORA: Deshacer borrado ─────────────────────────────────────────────
+let _deleteTimer = null;
+let _pendingDelete = null; // { id, ev }
+
 async function deleteEvent(id) {
-  if (!confirm('¿Eliminar este evento?')) return;
-  const ev = events.find(e => e.id === id); if (ev?.image_url) await deleteImageFromUrl(ev.image_url);
+  const ev = events.find(e => e.id === id);
+  if (!ev) return;
+
+  // Si ya hay un borrado pendiente de otro evento, confirmarlo inmediatamente
+  if (_pendingDelete && _pendingDelete.id !== id) await _commitDelete();
+
+  // Eliminar de la vista inmediatamente (optimistic)
+  _pendingDelete = { id, ev };
+  events = events.filter(e => e.id !== id);
+  render();
+  closeDetail();
+
+  // Mostrar toast con botón Deshacer durante 4 s
+  _showUndoToast(ev.title);
+
+  clearTimeout(_deleteTimer);
+  _deleteTimer = setTimeout(_commitDelete, 4000);
+}
+
+function _showUndoToast(title) {
+  const el = document.getElementById('toast');
+  el.innerHTML = `Eliminado <button onclick="undoDelete()" style="margin-left:10px;background:none;border:1px solid rgba(255,255,255,.35);border-radius:20px;padding:2px 10px;color:inherit;font-size:12px;cursor:pointer;font-family:var(--ui)">Deshacer</button>`;
+  el.className = 'show';
+  // No ponemos setTimeout aquí: se limpia en _commitDelete o undoDelete
+}
+
+async function _commitDelete() {
+  if (!_pendingDelete) return;
+  const { id, ev } = _pendingDelete;
+  _pendingDelete = null;
+  clearTimeout(_deleteTimer);
+
+  // Limpiar toast
+  const el = document.getElementById('toast');
+  el.className = '';
+
+  if (ev.image_url) await deleteImageFromUrl(ev.image_url).catch(() => {});
   const { error } = await db.from('events').delete().eq('id', id);
-  if (error) { toast('Error al eliminar', true); return; }
-  events = events.filter(e => e.id !== id); await idbRemove(id); render(); toast('Evento eliminado');
+  if (error) {
+    // Revertir si falla
+    events.push(ev);
+    events.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
+    render();
+    toast('Error al eliminar', true);
+    return;
+  }
+  await idbRemove(id);
+}
+
+function undoDelete() {
+  if (!_pendingDelete) return;
+  const { ev } = _pendingDelete;
+  _pendingDelete = null;
+  clearTimeout(_deleteTimer);
+
+  // Restaurar evento en la lista
+  events.push(ev);
+  events.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
+  render();
+
+  const el = document.getElementById('toast');
+  el.className = '';
+  toast(`↩ "${ev.title}" restaurado`);
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────
@@ -475,7 +537,7 @@ function renderFilters() {
     </select>`;
 }
 
-function openFilterPanel()  { renderFilterPanel(); document.getElementById('filter-panel-overlay').classList.add('open'); }
+function openFilterPanel()  { renderFilterPanel(); document.getElementById('filter-panel-overlay').classList.add('open'); _attachSwipe(document.querySelector('.filter-panel'), closeFilterPanel); }
 function closeFilterPanel() { document.getElementById('filter-panel-overlay').classList.remove('open'); }
 function renderFilterPanel() {
   const years = getYears(), upcomingCount = events.filter(e => e.date && daysUntil(e.date) >= 0).length;
@@ -628,11 +690,17 @@ function buildCalHTML(list) {
     }).join('') + (dayEvts.length > 3 ? `<div class="cal-ev-more">+${dayEvts.length-3} más</div>` : '');
     const hasFutureEvt = dayEvts.some(e => daysUntil(e.date) >= 0);
     const cls = ['cal-cell', !inMonth ? 'cal-other' : '', isToday ? 'cal-today' : '', isPast && inMonth && !isToday ? 'cal-past' : '', isFuture ? 'cal-future' : '', dayEvts.length ? 'cal-has-events' : '', hasFutureEvt && inMonth ? 'cal-upcoming-day' : ''].filter(Boolean).join(' ');
-    // MEJORA: 1 evento → abre detalle directo; varios → panel de día
+    // MEJORA: 1 evento → abre detalle directo; varios → panel de día; ninguno → botón "+" si es del mes actual/futuro
     const cellClick = dayEvts.length === 1
       ? `onclick="openDetail(${dayEvts[0].id})" role="button" tabindex="0"`
       : dayEvts.length > 1 ? `onclick="openDayDetail('${dateStr}')" role="button" tabindex="0"` : '';
-    cells += `<div class="${cls}" ${cellClick}><div class="cal-day-num">${day}${isToday ? '<span class="cal-today-ring"></span>' : ''}</div>${dayEvts.length ? `<div class="cal-dots">${dots}</div><div class="cal-preview">${preview}</div>` : ''}</div>`;
+
+    // Botón "+" en días vacíos del mes vigente (no en días de otros meses ni en el pasado lejano)
+    const addBtn = inMonth && dayEvts.length === 0
+      ? `<button class="cal-add-btn" onclick="event.stopPropagation();openFormWithDate('${dateStr}')" title="Añadir evento">＋</button>`
+      : '';
+
+    cells += `<div class="${cls}" ${cellClick}><div class="cal-day-num">${day}${isToday ? '<span class="cal-today-ring"></span>' : ''}${addBtn}</div>${dayEvts.length ? `<div class="cal-dots">${dots}</div><div class="cal-preview">${preview}</div>` : ''}</div>`;
   }
 
   const statBadge = monthEvts.length
@@ -651,6 +719,15 @@ function buildCalHTML(list) {
   </div>`;
 }
 
+// MEJORA: abrir formulario con fecha prellenada desde el calendario
+function openFormWithDate(dateStr) {
+  openForm();
+  setTimeout(() => {
+    const dateInput = document.getElementById("f-date");
+    if (dateInput) dateInput.value = dateStr;
+  }, 50);
+}
+
 function openDayDetail(dateStr) {
   const dayEvts = events.filter(e => e.date === dateStr); if (!dayEvts.length) return;
   const [y,m,d] = dateStr.split('-');
@@ -665,7 +742,7 @@ function openDayDetail(dateStr) {
   document.getElementById('cal-day-panel').innerHTML = `
     <div class="cal-day-hd"><div class="cal-day-title">📅 ${label}</div><button class="cal-day-close" onclick="closeDayDetail()">✕</button></div>
     <div class="cal-day-events">${items}</div>`;
-  document.getElementById('cal-day-overlay').classList.add('open');
+  document.getElementById('cal-day-overlay').classList.add('open'); _attachSwipe(document.querySelector('.cal-day-panel'), closeDayDetail);
 }
 function closeDayDetail() { document.getElementById('cal-day-overlay').classList.remove('open'); }
 
@@ -716,7 +793,7 @@ async function toggleNotifications() {
 }
 function disableNotifications() { localStorage.removeItem(NOTIF_ENABLED_KEY); localStorage.removeItem(NOTIF_LOG_KEY); updateNotifBtn(); closeNotifPanel(); toast('Recordatorios desactivados'); }
 function updateNotifBtn() { const btn = document.getElementById('notif-btn'); if (!btn) return; const on = notifEnabled(); btn.innerHTML = on ? '🔔' : '🔕'; btn.title = on ? 'Gestionar recordatorios' : 'Activar recordatorios'; btn.classList.toggle('notif-active', on); }
-function openNotifPanel()  { updateNotifBtn(); renderNotifPanel(); document.getElementById('notif-panel-overlay').classList.add('open'); }
+function openNotifPanel()  { updateNotifBtn(); renderNotifPanel(); document.getElementById('notif-panel-overlay').classList.add('open'); _attachSwipe(document.querySelector('.notif-panel'), closeNotifPanel); }
 function closeNotifPanel() { document.getElementById('notif-panel-overlay').classList.remove('open'); }
 
 // MEJORA: detectar soporte limitado iOS/Safari para notificaciones en segundo plano
@@ -811,7 +888,7 @@ function launchConfetti() {
 }
 
 // ── Category manager ──────────────────────────────────────────────────────
-function openCatManager() { loadCats(); renderCatManager(); document.getElementById('cat-manager-overlay').classList.add('open'); }
+function openCatManager() { loadCats(); renderCatManager(); document.getElementById('cat-manager-overlay').classList.add('open'); _attachSwipe(document.querySelector('.cat-manager-panel'), closeCatManager); }
 function closeCatManager() { document.getElementById('cat-manager-overlay').classList.remove('open'); rebuildCatSelect(); render(); }
 function renderCatManager() {
   const custom = getCustomCats();
@@ -904,11 +981,41 @@ function formNext() {
 function formBack() { if (currentStep === 1) closeForm(); else showStep(currentStep - 1); }
 
 // ── Detail view ───────────────────────────────────────────────────────────
+// ── MEJORA: ID del evento activo en detalle (para edición inline) ─────────
+let _detailId = null;
+
 function openDetail(id) {
   if (_lpFired) { _lpFired = false; return; }
   const ev = events.find(e => e.id === id); if (!ev) return;
-  const cat = CATS[ev.cat] || CATS['Otro'], loc = [ev.venue,ev.city].filter(Boolean).join(' · ');
-  // MEJORA: onerror en imagen del detalle para fallback offline
+  _detailId = id;
+  _renderDetailPanel(ev);
+  document.getElementById('detail-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  _attachSwipe(document.getElementById('detail-panel'), closeDetail);
+}
+
+function _renderDetailPanel(ev) {
+  const cat = CATS[ev.cat] || CATS['Otro'];
+  const loc = [ev.venue, ev.city].filter(Boolean).join(' · ');
+
+  // Inline star buttons (5 estrellas, click para valorar/quitar)
+  const inlineStars = [1,2,3,4,5].map(i => {
+    const full = ev.rating >= i, half = !full && ev.rating >= i - 0.5;
+    return `<button class="di-star${full||half?' di-star-on':''}" data-val="${i}" onclick="detailSetRating(${ev.id},${i})" title="${i} ★">${full ? '★' : half ? '⯨' : '☆'}</button>`;
+  }).join('');
+
+  // Inline notes: textarea que se activa al hacer clic
+  const notesHtml = `
+    <div class="di-notes-wrap" onclick="detailEditNotes(${ev.id})">
+      <div class="di-notes-display${ev.notes ? '' : ' di-notes-empty'}" id="di-notes-display-${ev.id}">
+        ${ev.notes ? escHtml(ev.notes).replace(/\n/g,'<br>') : '<span class="di-notes-hint">Toca para añadir notas…</span>'}
+      </div>
+      <textarea class="di-notes-input" id="di-notes-input-${ev.id}" style="display:none"
+        onblur="detailSaveNotes(${ev.id})"
+        onkeydown="if(event.key==='Escape')detailCancelNotes(${ev.id})"
+        placeholder="Escribe tus impresiones…">${ev.notes ? escHtml(ev.notes) : ''}</textarea>
+    </div>`;
+
   document.getElementById('detail-panel').innerHTML = `
     <div class="detail-img-wrap">
       ${ev.image_url
@@ -924,19 +1031,114 @@ function openDetail(id) {
         ${loc     ? `<div class="detail-meta"><span class="dm-icon">📍</span>${escHtml(loc)}${ev.maps_url?` <a href="${ev.maps_url}" target="_blank" rel="noopener" class="detail-map-link">Ver en mapa →</a>`:''}</div>` : ''}
         ${ev.companions ? `<div class="detail-meta"><span class="dm-icon">👥</span>${getCompanions(ev).map(c=>`<span class="companion-tag">${escHtml(c)}</span>`).join('')}</div>` : ''}
       </div>
-      ${ev.rating ? `<div class="detail-stars stars-row">${starsHtml(ev.rating)}</div>` : ''}
-      ${ev.notes  ? `<div class="detail-notes">${escHtml(ev.notes).replace(/\n/g,'<br>')}</div>` : ''}
+
+      <!-- MEJORA: valoración editable inline -->
+      <div class="di-stars-row" title="Toca para valorar">${inlineStars}</div>
+
+      <!-- MEJORA: notas editables inline -->
+      ${notesHtml}
+
       <div class="detail-actions">
         <button class="detail-action-btn" onclick="closeDetail();setTimeout(()=>openForm(events.find(e=>e.id===${ev.id})),120)">✏️ Editar</button>
         <button class="detail-action-btn" onclick="closeDetail();setTimeout(()=>duplicateEvent(${ev.id}),120)">📋 Copiar</button>
         <button class="detail-action-btn" onclick="shareEvent(${ev.id})">📤 Enviar</button>
-        <button class="detail-action-btn btn-del" onclick="closeDetail();setTimeout(()=>deleteEvent(${ev.id}),120)">✕ Borrar</button>
+        <button class="detail-action-btn btn-del" onclick="deleteEvent(${ev.id})">✕ Borrar</button>
       </div>
     </div>`;
-  document.getElementById('detail-overlay').classList.add('open'); document.body.style.overflow = 'hidden';
 }
-function closeDetail() { document.getElementById('detail-overlay').classList.remove('open'); document.body.style.overflow = ''; }
+
+// Inline rating save
+async function detailSetRating(id, val) {
+  const ev = events.find(e => e.id === id); if (!ev) return;
+  const newRating = ev.rating === val ? null : val; // toggle off si mismo valor
+  const { data, error } = await db.from('events').update({ rating: newRating }).eq('id', id).select().single();
+  if (error) { toast('Error al guardar valoración', true); return; }
+  events = events.map(e => e.id === id ? data : e);
+  await idbUpsert(data);
+  _renderDetailPanel(data);
+  if (newRating === 5) launchConfetti();
+}
+
+// Inline notes edit
+function detailEditNotes(id) {
+  const display = document.getElementById(`di-notes-display-${id}`);
+  const input   = document.getElementById(`di-notes-input-${id}`);
+  if (!display || !input) return;
+  display.style.display = 'none';
+  input.style.display   = 'block';
+  input.focus();
+  // Colocar cursor al final
+  const len = input.value.length;
+  input.setSelectionRange(len, len);
+}
+
+async function detailSaveNotes(id) {
+  const input = document.getElementById(`di-notes-input-${id}`);
+  if (!input) return;
+  const newNotes = input.value.trim();
+  const ev = events.find(e => e.id === id); if (!ev) return;
+  if (newNotes === (ev.notes || '').trim()) {
+    // Sin cambios: restaurar display
+    detailCancelNotes(id); return;
+  }
+  const { data, error } = await db.from('events').update({ notes: newNotes || null }).eq('id', id).select().single();
+  if (error) { toast('Error al guardar notas', true); detailCancelNotes(id); return; }
+  events = events.map(e => e.id === id ? data : e);
+  await idbUpsert(data);
+  _renderDetailPanel(data);
+  toast('✓ Notas guardadas');
+}
+
+function detailCancelNotes(id) {
+  const ev      = events.find(e => e.id === id); if (!ev) return;
+  const display = document.getElementById(`di-notes-display-${id}`);
+  const input   = document.getElementById(`di-notes-input-${id}`);
+  if (!display || !input) return;
+  input.style.display   = 'none';
+  display.style.display = 'block';
+}
+
+function closeDetail() {
+  document.getElementById('detail-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+  _detailId = null;
+}
 function detailOverlayClick(e) { if (e.target === document.getElementById('detail-overlay')) closeDetail(); }
+
+// ── MEJORA: Swipe-down para cerrar cualquier sheet ─────────────────────────
+function _attachSwipe(el, closeFn) {
+  if (!el) return;
+  let startY = 0, startScrollTop = 0, dragging = false;
+
+  el.addEventListener('touchstart', e => {
+    startY = e.touches[0].clientY;
+    startScrollTop = el.scrollTop;
+    dragging = false;
+  }, { passive: true });
+
+  el.addEventListener('touchmove', e => {
+    const dy = e.touches[0].clientY - startY;
+    // Solo activar si estamos en el tope del scroll Y bajamos
+    if (dy > 0 && el.scrollTop <= 0) {
+      dragging = true;
+      el.style.transform = `translateY(${Math.min(dy * 0.55, 160)}px)`;
+      el.style.transition = 'none';
+    }
+  }, { passive: true });
+
+  el.addEventListener('touchend', e => {
+    const dy = e.changedTouches[0].clientY - startY;
+    el.style.transition = 'transform .25s cubic-bezier(.4,0,.2,1)';
+    if (dragging && dy > 90) {
+      el.style.transform = 'translateY(100%)';
+      setTimeout(() => { el.style.transform = ''; el.style.transition = ''; closeFn(); }, 240);
+    } else {
+      el.style.transform = '';
+      setTimeout(() => { el.style.transition = ''; }, 260);
+    }
+    dragging = false;
+  }, { passive: true });
+}
 
 // ── Venue Map ─────────────────────────────────────────────────────────────
 let venueMap = null, venueMarkers = [], openInfoWindow = null;
@@ -1128,7 +1330,7 @@ document.addEventListener('keydown',e=>{if(!document.getElementById('wrapped-ove
 // ── Stats panel ────────────────────────────────────────────────────────────
 let statsYear='Todos';
 function openStats(){
-  document.getElementById('stats-overlay').classList.add('open');
+  document.getElementById('stats-overlay').classList.add('open'); setTimeout(()=>_attachSwipe(document.querySelector('.stats-panel'), closeStats), 50);
   const sel=document.getElementById('stats-year-sel'),years=getYears();
   sel.innerHTML='<option value="Todos">Todos los años</option>'+years.map(y=>`<option value="${y}" ${y===statsYear?'selected':''}>${y}</option>`).join('');
   try{renderStatsPanel();}catch(err){document.getElementById('stats-content').innerHTML=`<p style="padding:2rem;text-align:center;color:var(--text3)">Error al cargar estadísticas.<br><small>${err.message}</small></p>`;console.error(err);}

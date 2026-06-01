@@ -60,7 +60,6 @@
   Sin conexión — los cambios se guardarán localmente y se sincronizarán al volver online
 </div>
 
-
 <!-- Stats -->
 <div class="stats-bar" id="stats-bar">
   <div class="stat"><div class="stat-n">—</div><div class="stat-l">Total</div></div>
@@ -85,20 +84,18 @@
   </div>
 </main>
 
-<!-- Add/Edit Sheet -->
+<!-- Add/Edit Sheet — 3 steps (lugar + recuerdos + valoración fusionados) -->
 <div class="overlay" id="overlay" onclick="overlayClick(event)">
   <div class="sheet">
     <div class="sheet-handle"></div>
 
-    <!-- Step progress bar -->
+    <!-- Step progress bar (3 steps) -->
     <div class="form-progress">
       <div class="fp-step active" data-s="1"></div>
       <div class="fp-line"></div>
       <div class="fp-step" data-s="2"></div>
       <div class="fp-line"></div>
       <div class="fp-step" data-s="3"></div>
-      <div class="fp-line"></div>
-      <div class="fp-step" data-s="4"></div>
     </div>
 
     <div class="form-step-meta">
@@ -137,12 +134,16 @@
       </div>
       <div class="form-group">
         <label>Dirección</label>
-        <input type="text" id="f-address" placeholder="Se rellena automáticamente" readonly style="color:var(--text3);"/>
+        <input type="text" id="f-address" placeholder="Se rellena automáticamente" style="color:var(--text3);"/>
       </div>
-      <input type="hidden" id="f-maps-url"/>
+      <!-- maps_url ahora visible y editable -->
+      <div class="form-group">
+        <label>Enlace al mapa <span style="font-size:10px;color:var(--text3);font-weight:400">(opcional — se rellena solo con Google Places)</span></label>
+        <input type="url" id="f-maps-url" placeholder="https://maps.google.com/…"/>
+      </div>
     </div>
 
-    <!-- ── Step 3: Recuerdos ── -->
+    <!-- ── Step 3: Recuerdos + Valoración (fusionados) ── -->
     <div class="form-step" id="step-3">
       <div class="form-group">
         <label>Imagen</label>
@@ -152,7 +153,7 @@
           <span style="font-size:13px; color:var(--text2);" id="img-label-text">Seleccionar imagen…</span>
         </label>
         <div class="img-thumb-wrap" id="img-thumb-wrap" onclick="openFocusPicker()">
-          <img id="img-thumb" alt="Vista previa"/>
+          <img id="img-thumb" alt="Vista previa" onerror="this.parentElement.style.display='none'"/>
           <div class="img-thumb-overlay"><span>🎯 Ajustar encuadre</span></div>
           <button class="img-remove-btn" onclick="removeImage(event)">✕</button>
         </div>
@@ -166,10 +167,7 @@
         <label>¿Con quién fuiste?</label>
         <input type="text" id="f-companions" placeholder="María, Juan, Sofía…"/>
       </div>
-    </div>
-
-    <!-- ── Step 4: Valoración ── -->
-    <div class="form-step" id="step-4">
+      <!-- Valoración fusionada aquí -->
       <div class="form-group">
         <label>Valoración</label>
         <input type="hidden" id="f-rating" value="0"/>
@@ -272,6 +270,7 @@
 </div>
 
 <canvas id="confetti-canvas" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:9997;display:none"></canvas>
+
 <!-- Category manager -->
 <div id="cat-manager-overlay" class="cat-manager-overlay" onclick="if(event.target===this)closeCatManager()">
   <div class="cat-manager-panel">

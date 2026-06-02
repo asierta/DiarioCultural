@@ -850,3 +850,99 @@ main { padding:1.25rem;max-width:900px;margin:0 auto;position:relative; }
 }
 /* El panel de stats ya tiene su propio header sticky, el handle va encima */
 .stats-panel::before { margin-bottom: -4px; }
+
+/* ════════════════════════════════════════
+   MEJORAS — ITERACIÓN 3
+   ════════════════════════════════════════ */
+
+/* ── Skeleton de imagen (shimmer mientras carga) ── */
+.card-img-lazy {
+  opacity: 0;
+  transition: opacity .3s ease;
+  background: linear-gradient(90deg,
+    rgba(255,255,255,.04) 0%,
+    rgba(255,255,255,.09) 40%,
+    rgba(255,255,255,.04) 80%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+.card-img-lazy.loaded {
+  opacity: 1;
+  animation: none;
+  background: none;
+}
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Autocompletar compañeros ── */
+.companions-wrap { position: relative; }
+.companions-suggestions {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  background: rgba(14,12,18,.97);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border2);
+  border-radius: var(--r-sm);
+  z-index: 50;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0,0,0,.45);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.companions-suggestions.open { display: block; animation: fadeIn .15s ease both; }
+.comp-suggestion {
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--text2);
+  cursor: pointer;
+  transition: background .12s, color .12s;
+  font-family: var(--ui);
+}
+.comp-suggestion:hover,
+.comp-suggestion.active { background: rgba(201,148,58,.1); color: var(--amber-lt); }
+.comp-suggestion + .comp-suggestion { border-top: 1px solid var(--border); }
+
+/* ── Récords ── */
+.records-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.record-item {
+  background: rgba(22,20,25,.7);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: .75rem .9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: fadeUp .35s ease both;
+}
+.record-icon  { font-size: 20px; line-height: 1; }
+.record-label { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--text3); font-weight: 500; }
+.record-value { font-family: var(--serif); font-size: 14px; color: var(--text); line-height: 1.35; font-style: italic; }
+
+/* ── Campo precio en formulario ── */
+#f-price { text-align: right; -moz-appearance: textfield; }
+#f-price::-webkit-outer-spin-button,
+#f-price::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+/* ── Precio en panel de detalle ── */
+.detail-price {
+  font-family: var(--serif);
+  font-size: 15px;
+  color: var(--amber-lt);
+  opacity: .85;
+}
+
+/* ── Precio en tarjeta ── */
+.card-price {
+  font-size: 10px;
+  color: var(--text3);
+  font-family: var(--ui);
+}

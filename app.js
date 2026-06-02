@@ -161,6 +161,7 @@ async function doLogin() {
   btn.disabled = false; btn.textContent = 'Entrar';
   if (error) { showLoginError('Email o contraseña incorrectos.'); return; }
   hideLoginScreen();
+  subscribeRealtime();
 }
 function showLoginError(msg) { const el = document.getElementById('login-error'); el.textContent = msg; el.style.display = 'block'; }
 async function doLogout() { await db.auth.signOut(); document.getElementById('login-screen').style.display = 'flex'; document.getElementById('l-pass').value = ''; document.getElementById('login-error').style.display = 'none'; }
@@ -345,6 +346,9 @@ function openForm(ev = null) {
   document.getElementById('f-maps-url').value  = ev?.maps_url || '';
   document.getElementById('f-notes').value     = ev?.notes   || '';
   document.getElementById('f-companions').value = ev?.companions || '';
+  // MEJORA: campo precio
+  const priceInp = document.getElementById('f-price');
+  if (priceInp) priceInp.value = ev?.price != null ? ev.price : '';
   document.getElementById('f-image').value = ''; setProgress(0);
   const wrap = document.getElementById('img-thumb-wrap');
   if (ev?.image_url) { showThumb(ev.image_url, focusX, focusY); document.getElementById('img-label-text').textContent = 'Cambiar imagen…'; }
@@ -397,6 +401,7 @@ async function saveEvent() {
     address: document.getElementById('f-address').value.trim(), maps_url: document.getElementById('f-maps-url').value.trim(),
     notes: document.getElementById('f-notes').value.trim(), companions: document.getElementById('f-companions').value.trim(),
     rating: (() => { const r = parseFloat(document.getElementById('f-rating')?.value ?? formRating); return r > 0 ? r : null; })(),
+    price:  (() => { const p = parseFloat(document.getElementById('f-price')?.value); return !isNaN(p) && p > 0 ? p : null; })(),
     image_url: imageUrl, image_position: imagePosition,
   };
   if (editingId) {
@@ -556,6 +561,78 @@ function renderFilterPanel() {
 function resetAllFilters() { filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; filterUpcoming = false; hideUpcoming = false; renderView(); renderFilterPanel(); }
 
 // ── renderGrid ────────────────────────────────────────────────────────────
+// ── MEJORA: Autocompletar compañeros ─────────────────────────────────────
+function getAllCompanions() {
+  const map = {};
+  events.forEach(e => getCompanions(e).forEach(c => { map[c] = (map[c]||0) + 1; }));
+  return Object.entries(map).sort((a,b) => b[1]-a[1]).map(([name]) => name);
+}
+
+function onCompanionsInput(e) {
+  const input = e.target;
+  const val   = input.value;
+  // Obtener el término que se está escribiendo ahora (tras la última coma)
+  const parts = val.split(',');
+  const current = parts[parts.length - 1].trim().toLowerCase();
+  const already = parts.slice(0, -1).map(p => p.trim().toLowerCase());
+
+  const box = document.getElementById('companions-suggestions');
+  if (!box) return;
+
+  if (!current) { box.innerHTML = ''; box.classList.remove('open'); return; }
+
+  const matches = getAllCompanions()
+    .filter(c => c.toLowerCase().includes(current) && !already.includes(c.toLowerCase()))
+    .slice(0, 6);
+
+  if (!matches.length) { box.innerHTML = ''; box.classList.remove('open'); return; }
+
+  box.innerHTML = matches.map((c, i) =>
+    `<div class="comp-suggestion" data-idx="${i}" onmousedown="pickCompanion('${c.replace(/'/g,"\\'")}')">${escHtml(c)}</div>`
+  ).join('');
+  box.classList.add('open');
+}
+
+function onCompanionsKey(e) {
+  const box = document.getElementById('companions-suggestions');
+  if (!box?.classList.contains('open')) return;
+  const items = box.querySelectorAll('.comp-suggestion');
+  const active = box.querySelector('.comp-suggestion.active');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    const next = active ? active.nextElementSibling : items[0];
+    active?.classList.remove('active'); next?.classList.add('active');
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    const prev = active ? active.previousElementSibling : items[items.length-1];
+    active?.classList.remove('active'); prev?.classList.add('active');
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    if (active) { e.preventDefault(); pickCompanion(active.textContent); }
+  } else if (e.key === 'Escape') {
+    box.innerHTML = ''; box.classList.remove('open');
+  }
+}
+
+function pickCompanion(name) {
+  const input = document.getElementById('f-companions');
+  if (!input) return;
+  const parts  = input.value.split(',');
+  parts[parts.length - 1] = ' ' + name;
+  input.value = parts.join(',').replace(/^,\s*/, '') + ', ';
+  // Mover cursor al final
+  setTimeout(() => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }, 10);
+  const box = document.getElementById('companions-suggestions');
+  if (box) { box.innerHTML = ''; box.classList.remove('open'); }
+}
+
+// Cerrar sugerencias al hacer clic fuera
+document.addEventListener('click', e => {
+  if (!e.target.closest('.companions-wrap')) {
+    const box = document.getElementById('companions-suggestions');
+    if (box) { box.innerHTML = ''; box.classList.remove('open'); }
+  }
+});
+
 function renderGrid() {
   if (viewMode === 'calendar') { renderCalendar(); return; }
   const el = document.getElementById('events-grid');
@@ -599,7 +676,7 @@ function renderGrid() {
     const countdownHtml = countdown ? `<div class="card-countdown ${countdown.cls}">${countdown.text}</div>` : '';
     // MEJORA: onerror fallback offline — muestra emoji de categoría si la imagen no carga
     const imgHtml = ev.image_url
-      ? `<div class="card-image-wrap">${countdownHtml}<img src="${ev.image_url}" alt="${escHtml(ev.title)}" loading="lazy" style="object-position:${pos}" onerror="this.style.display='none';this.parentElement.classList.add('card-img-placeholder');this.parentElement.style.setProperty('--cat-color','${cat.color}');if(!this.parentElement.querySelector('.card-img-emoji')){const s=document.createElement('span');s.className='card-img-emoji';s.textContent='${cat.emoji}';this.parentElement.appendChild(s);}"/></div>`
+      ? `<div class="card-image-wrap">${countdownHtml}<img src="${ev.image_url}" alt="${escHtml(ev.title)}" loading="lazy" style="object-position:${pos}" class="card-img-lazy" onload="this.classList.add('loaded')" onerror="this.style.display='none';this.parentElement.classList.add('card-img-placeholder');this.parentElement.style.setProperty('--cat-color','${cat.color}');if(!this.parentElement.querySelector('.card-img-emoji')){const s=document.createElement('span');s.className='card-img-emoji';s.textContent='${cat.emoji}';this.parentElement.appendChild(s);}"/></div>`
       : `<div class="card-image-wrap card-img-placeholder" style="--cat-color:${cat.color}">${countdownHtml}<span class="card-img-emoji">${cat.emoji}</span></div>`;
     return `<div class="event-card" style="--cat-color:${cat.color}; animation-delay:${Math.min(i*.05,.3)}s" onclick="openDetail(${ev.id})">
       ${imgHtml}
@@ -1030,6 +1107,7 @@ function _renderDetailPanel(ev) {
         ${ev.date ? `<div class="detail-meta"><span class="dm-icon">📅</span>${fmtDate(ev.date)}</div>` : ''}
         ${loc     ? `<div class="detail-meta"><span class="dm-icon">📍</span>${escHtml(loc)}${ev.maps_url?` <a href="${ev.maps_url}" target="_blank" rel="noopener" class="detail-map-link">Ver en mapa →</a>`:''}</div>` : ''}
         ${ev.companions ? `<div class="detail-meta"><span class="dm-icon">👥</span>${getCompanions(ev).map(c=>`<span class="companion-tag">${escHtml(c)}</span>`).join('')}</div>` : ''}
+        ${ev.price > 0 ? `<div class="detail-meta"><span class="dm-icon">🎟</span><span class="detail-price">${ev.price.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})} €</span></div>` : ''}
       </div>
 
       <!-- MEJORA: valoración editable inline -->
@@ -1365,7 +1443,94 @@ function renderStatsPanel(){
   if(statsYear==='Todos'){const years=getYears();if(years.length>=2)content.innerHTML+=renderYearComparison(years);}
   const targetYear=statsYear!=='Todos'?statsYear:getYears()[0];
   if(targetYear)content.innerHTML+=`<button class="btn-wrapped" onclick="closeStats();openWrapped('${targetYear}')">🎞 Ver ${targetYear} en imágenes</button>`;
+  // MEJORA: Rachas, récords y gasto
+  content.innerHTML += renderRecordsSection(evts);
+  content.innerHTML += renderPriceSection(evts);
+
   content.innerHTML+=`<div class="export-section"><div class="export-title">Exportar</div><div class="export-btns"><button class="export-btn" onclick="exportCSV()"><span class="export-icon">📊</span><span class="export-label">CSV</span><span class="export-sub">Excel / Sheets</span></button><button class="export-btn" onclick="exportPDF()"><span class="export-icon">📄</span><span class="export-label">PDF</span><span class="export-sub">Imprimir / Guardar</span></button></div></div>`;
+}
+
+// ── MEJORA: Rachas y récords ───────────────────────────────────────────────
+function renderRecordsSection(evts) {
+  if (evts.length < 3) return '';
+
+  // Mes más activo de todos los tiempos (dentro de evts)
+  const monthMap = {};
+  evts.forEach(e => { if (!e.date) return; const k = e.date.slice(0,7); monthMap[k] = (monthMap[k]||0)+1; });
+  const topMonth = Object.entries(monthMap).sort((a,b)=>b[1]-a[1])[0];
+  const [topY, topM] = topMonth ? topMonth[0].split('-') : [null,null];
+  const MNAMES_FULL = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const topMonthLabel = topMonth ? `${MNAMES_FULL[parseInt(topM)-1]} ${topY}` : '—';
+
+  // Racha más larga de meses consecutivos con al menos 1 evento
+  const months = [...new Set(evts.map(e=>e.date?.slice(0,7)).filter(Boolean))].sort();
+  let maxStreak = 1, cur = 1, streakEnd = months[0];
+  for (let i = 1; i < months.length; i++) {
+    const [py,pm] = months[i-1].split('-').map(Number);
+    const [cy,cm] = months[i].split('-').map(Number);
+    const consecutive = (cy*12+cm) - (py*12+pm) === 1;
+    if (consecutive) { cur++; if (cur > maxStreak) { maxStreak = cur; streakEnd = months[i]; } }
+    else cur = 1;
+  }
+
+  // Evento mejor valorado
+  const best = [...evts].filter(e=>e.rating).sort((a,b)=>b.rating-a.rating)[0];
+
+  // Categoría más frecuente
+  const catCount = {};
+  evts.forEach(e => { if (e.cat) catCount[e.cat] = (catCount[e.cat]||0)+1; });
+  const topCat = Object.entries(catCount).sort((a,b)=>b[1]-a[1])[0];
+
+  const records = [
+    { icon:'🔥', label:'Mes más activo', value: topMonth ? `${topMonthLabel} (${topMonth[1]} eventos)` : '—' },
+    { icon:'📅', label:'Racha más larga', value: maxStreak > 1 ? `${maxStreak} meses consecutivos` : 'Sin racha aún' },
+    { icon:'⭐', label:'Mejor valorado', value: best ? `${escHtml(best.title)} (${best.rating}★)` : '—' },
+    { icon:'🏆', label:'Categoría favorita', value: topCat ? `${CATS[topCat[0]]?.emoji||''} ${topCat[0]} (${topCat[1]})` : '—' },
+  ];
+
+  return `<div class="stats-section">
+    <div class="stats-section-title">Mis récords</div>
+    <div class="records-grid">
+      ${records.map(r=>`<div class="record-item">
+        <div class="record-icon">${r.icon}</div>
+        <div class="record-label">${r.label}</div>
+        <div class="record-value">${r.value}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+// ── MEJORA: Estadísticas de gasto ─────────────────────────────────────────
+function renderPriceSection(evts) {
+  const withPrice = evts.filter(e => e.price > 0);
+  if (withPrice.length < 2) return '';
+
+  const total   = withPrice.reduce((s,e) => s + e.price, 0);
+  const avg     = total / withPrice.length;
+  const maxEv   = [...withPrice].sort((a,b)=>b.price-a.price)[0];
+  const fmt     = n => n.toLocaleString('es-ES', { minimumFractionDigits:2, maximumFractionDigits:2 });
+
+  // Gasto por categoría
+  const catCost = {};
+  withPrice.forEach(e => { catCost[e.cat] = (catCost[e.cat]||0) + e.price; });
+  const catRows = Object.entries(catCost).sort((a,b)=>b[1]-a[1]);
+  const maxCost = catRows[0]?.[1] || 1;
+
+  return `<div class="stats-section">
+    <div class="stats-section-title">Gasto cultural</div>
+    <div class="stats-summary" style="grid-template-columns:repeat(3,1fr);margin-bottom:.85rem">
+      <div class="stats-summary-item"><div class="stats-summary-n" style="font-size:20px">${fmt(total)}€</div><div class="stats-summary-l">Total</div></div>
+      <div class="stats-summary-item"><div class="stats-summary-n" style="font-size:20px">${fmt(avg)}€</div><div class="stats-summary-l">Media</div></div>
+      <div class="stats-summary-item"><div class="stats-summary-n" style="font-size:18px;padding-top:3px" title="${escHtml(maxEv.title)}">${fmt(maxEv.price)}€</div><div class="stats-summary-l">Más caro</div></div>
+    </div>
+    <div class="stat-rows">
+      ${catRows.map(([cat,cost])=>`<div class="stat-row">
+        <div class="stat-row-label">${CATS[cat]?.emoji||''} ${cat}</div>
+        <div class="stat-row-track"><div class="stat-row-fill" style="width:${(cost/maxCost*100).toFixed(1)}%;background:${CATS[cat]?.color||'var(--amber)'};opacity:.8"></div></div>
+        <div class="stat-row-n">${fmt(cost)}€</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
 }
 
 // MEJORA: comparativa de años con indicador cuando hay más de 5 años
@@ -1425,10 +1590,79 @@ function buildPrintHTML(list){
   document.body.insertBefore(wrap,document.body.firstChild);
 })();
 
-db.auth.getSession().then(({data:{session}})=>{if(session)hideLoginScreen();});
+// ── MEJORA: Supabase Realtime — sincronización entre pestañas/dispositivos ─
+let _realtimeChannel = null;
+
+function subscribeRealtime() {
+  if (_realtimeChannel) return; // ya suscrito
+  _realtimeChannel = db
+    .channel('events-realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, async payload => {
+      if (payload.eventType === 'INSERT') {
+        // Solo añadir si no existe ya (puede venir de este mismo tab)
+        if (!events.find(e => e.id === payload.new.id)) {
+          events.unshift(payload.new);
+          await idbUpsert(payload.new);
+          render();
+        }
+      } else if (payload.eventType === 'UPDATE') {
+        const updated = payload.new;
+        if (events.find(e => e.id === updated.id)) {
+          events = events.map(e => e.id === updated.id ? updated : e);
+          await idbUpsert(updated);
+          // Refrescar detalle si está abierto
+          if (_detailId === updated.id) _renderDetailPanel(updated);
+          render();
+        }
+      } else if (payload.eventType === 'DELETE') {
+        const id = payload.old.id;
+        // No borrar si hay un _pendingDelete en curso (es nuestro propio borrado optimista)
+        if (_pendingDelete?.id === id) return;
+        if (events.find(e => e.id === id)) {
+          events = events.filter(e => e.id !== id);
+          await idbRemove(id);
+          if (_detailId === id) closeDetail();
+          render();
+        }
+      }
+    })
+    .subscribe();
+}
+
+function unsubscribeRealtime() {
+  if (_realtimeChannel) { db.removeChannel(_realtimeChannel); _realtimeChannel = null; }
+}
+
+// ── MEJORA: Rotación de citas en la pantalla de login ─────────────────────
+const LOGIN_QUOTES = [
+  '"El arte es la mentira que nos permite conocer la verdad."',
+  '"La música da alma al universo, alas a la mente y vuelo a la imaginación."',
+  '"El cine es un espejo con memoria."',
+  '"El teatro es la poesía que se levanta del libro y se hace humana."',
+  '"Una habitación sin libros es como un cuerpo sin alma."',
+  '"La pintura es poesía muda; la poesía es pintura ciega."',
+  '"La música es el arte más directo; entra por el oído y va al corazón."',
+  '"El arte no reproduce lo visible, sino que hace visible lo invisible."',
+  '"Donde las palabras fallan, la música habla."',
+  '"El arte es la firma de las civilizaciones."',
+];
+
+function rotateLoginQuote() {
+  const el = document.querySelector('.login-quote');
+  if (!el) return;
+  el.textContent = LOGIN_QUOTES[Math.floor(Math.random() * LOGIN_QUOTES.length)];
+}
+
+db.auth.getSession().then(({data:{session}})=>{
+  if(session) {
+    hideLoginScreen();
+    subscribeRealtime();
+  }
+  rotateLoginQuote();
+});
 loadEvents();
-window.addEventListener('online',async()=>{isOnline=true;updateOfflineBanner();toast('✓ Conexión restaurada — sincronizando…');await loadEvents();await processSyncQueue();});
-window.addEventListener('offline',()=>{isOnline=false;updateOfflineBanner();toast('Sin conexión — modo offline activo',true);});
+window.addEventListener('online',async()=>{isOnline=true;updateOfflineBanner();toast('✓ Conexión restaurada — sincronizando…');await loadEvents();await processSyncQueue();subscribeRealtime();});
+window.addEventListener('offline',()=>{isOnline=false;updateOfflineBanner();unsubscribeRealtime();toast('Sin conexión — modo offline activo',true);});
 updateOfflineBanner();
 
 // ── MEJORA: altura de tarjeta flexible (aspect-ratio) ─────────────────────

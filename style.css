@@ -946,3 +946,144 @@ main { padding:1.25rem;max-width:900px;margin:0 auto;position:relative; }
   color: var(--text3);
   font-family: var(--ui);
 }
+
+/* ════════════════════════════════════════
+   MEJORAS MÓVIL — ALINEACIÓN Y LEGIBILIDAD
+   ════════════════════════════════════════ */
+
+/* ── En móvil pequeño (<480px): 2 columnas compactas ── */
+@media (max-width: 479px) {
+  main { padding: .75rem; }
+
+  .events-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 7px;
+  }
+
+  /* Imagen más corta para que quepan título y meta sin scroll */
+  .card-image-wrap {
+    aspect-ratio: 4 / 3;
+  }
+
+  /* Cuerpo más compacto */
+  .card-body {
+    padding: .5rem .6rem;
+    gap: 3px;
+  }
+
+  /* Título una línea, font más pequeño */
+  .card-title {
+    font-size: 13px;
+    -webkit-line-clamp: 2;
+    letter-spacing: 0;
+  }
+
+  /* Meta más pequeña pero legible */
+  .card-meta {
+    font-size: 9.5px;
+  }
+
+  /* Estrellas más pequeñas */
+  .card-stars { font-size: 9px; }
+
+  /* Compañeros ocultos en grid móvil (se ven en detalle) */
+  .card-companions { display: none; }
+
+  /* Emoji de categoría más pequeño */
+  .cat-label { font-size: 14px; }
+
+  /* Botones de acción: solo el icono, sin tooltip */
+  .card-btn { padding: 3px 4px; }
+  .card-btn .btn-lbl { display: none; }
+}
+
+/* ── Vista lista en móvil: imagen más grande, mejor proporción ── */
+@media (max-width: 479px) {
+  .events-grid.list-view {
+    gap: 6px;
+  }
+
+  .events-grid.list-view .event-card {
+    min-height: 80px;
+  }
+
+  .events-grid.list-view .card-image-wrap {
+    width: 88px !important;
+    min-width: 88px !important;
+    aspect-ratio: unset !important;
+    height: 100% !important;
+  }
+
+  .events-grid.list-view .card-body {
+    padding: .6rem .75rem;
+    gap: 4px;
+  }
+
+  .events-grid.list-view .card-title {
+    font-size: 14px;
+    -webkit-line-clamp: 2;
+  }
+
+  .events-grid.list-view .card-companions {
+    display: flex;
+  }
+}
+
+/* ── Header en móvil: ocultar textos secundarios ── */
+@media (max-width: 479px) {
+  #logout-btn { display: none; }
+  #map-btn    { display: none; }
+
+  .logotype { font-size: 18px; }
+
+  .search-wrap { max-width: none; }
+
+  /* Stats bar: fuente más pequeña */
+  .stat-n { font-size: 22px; }
+  .stat-l { font-size: 9px; }
+  .stat   { padding: .65rem .4rem; }
+}
+
+/* ── Filter bar en móvil ── */
+@media (max-width: 479px) {
+  .filter-bar { padding: .5rem .75rem; gap: 6px; }
+  .btn-open-filters { padding: 4px 11px; font-size: 11px; }
+  .sort-select { font-size: 11px; padding: 4px 24px 4px 10px; }
+}
+
+/* ── Vista calendario en móvil: celdas más compactas ── */
+@media (max-width: 479px) {
+  .cal-cell { min-height: 52px; padding: 5px 4px 4px; border-radius: 7px; }
+  .cal-day-num { font-size: 10px; }
+  .cal-dot { width: 5px; height: 5px; }
+  .cal-add-btn { width: 15px; height: 15px; font-size: 12px; }
+  .cal-month-name { font-size: 20px; }
+  .cal-year-lbl   { font-size: 16px; }
+  .cal-stat-badge { font-size: 10px; padding: 2px 9px; }
+  .cal-nav { width: 30px; height: 30px; font-size: 19px; }
+}
+
+/* ── Tarjetas en móvil mediano (480-599px): 2 columnas con imagen 16/9 ── */
+@media (min-width: 480px) and (max-width: 599px) {
+  main { padding: .9rem; }
+
+  .card-body    { padding: .6rem .75rem; gap: 3px; }
+  .card-title   { font-size: 14px; }
+  .card-meta    { font-size: 10px; }
+  .card-companions { display: none; }
+}
+
+/* ── Mejorar tap targets en toda la app ── */
+@media (hover: none) and (pointer: coarse) {
+  /* El botón de añadir más grande y fácil de tocar */
+  #add-btn { padding: 9px 18px; font-size: 14px; }
+
+  /* Sheet handle más grande para arrastrar */
+  .sheet-handle { width: 48px; height: 6px; margin-bottom: 1rem; }
+
+  /* Botones de acción del detalle más grandes */
+  .detail-action-btn { padding: 12px 6px 10px; font-size: 11px; }
+
+  /* Estrellas inline en detalle más grandes */
+  .di-star { font-size: 32px; padding: 4px 5px; }
+}

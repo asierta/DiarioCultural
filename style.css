@@ -1284,3 +1284,219 @@ main { padding:1.25rem;max-width:900px;margin:0 auto;position:relative; }
   .rel-card  { width: 130px; }
   .rel-title { font-size: 11px; }
 }
+
+
+/* ════════════════════════════════════════
+   FIX: Scrollbar personalizada para paneles y sheets
+   ════════════════════════════════════════ */
+
+/* Scrollbar base - todos los paneles y sheets */
+.sheet::-webkit-scrollbar,
+.detail-panel::-webkit-scrollbar,
+.stats-panel::-webkit-scrollbar,
+.notif-panel::-webkit-scrollbar,
+.filter-panel::-webkit-scrollbar,
+.cat-manager-panel::-webkit-scrollbar,
+.cal-day-panel::-webkit-scrollbar,
+.map-sidebar::-webkit-scrollbar,
+#focus-overlay .focus-wrap::-webkit-scrollbar,
+#wrapped-overlay .wrapped-slide::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.sheet::-webkit-scrollbar-track,
+.detail-panel::-webkit-scrollbar-track,
+.stats-panel::-webkit-scrollbar-track,
+.notif-panel::-webkit-scrollbar-track,
+.filter-panel::-webkit-scrollbar-track,
+.cat-manager-panel::-webkit-scrollbar-track,
+.cal-day-panel::-webkit-scrollbar-track,
+.map-sidebar::-webkit-scrollbar-track,
+#focus-overlay .focus-wrap::-webkit-scrollbar-track,
+#wrapped-overlay .wrapped-slide::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+  margin: 4px 0;
+}
+
+.sheet::-webkit-scrollbar-thumb,
+.detail-panel::-webkit-scrollbar-thumb,
+.stats-panel::-webkit-scrollbar-thumb,
+.notif-panel::-webkit-scrollbar-thumb,
+.filter-panel::-webkit-scrollbar-thumb,
+.cat-manager-panel::-webkit-scrollbar-thumb,
+.cal-day-panel::-webkit-scrollbar-thumb,
+.map-sidebar::-webkit-scrollbar-thumb,
+#focus-overlay .focus-wrap::-webkit-scrollbar-thumb,
+#wrapped-overlay .wrapped-slide::-webkit-scrollbar-thumb {
+  background: rgba(201, 148, 58, 0.25);
+  border-radius: 3px;
+  border: 1px solid rgba(201, 148, 58, 0.08);
+  transition: background 0.2s ease;
+}
+
+.sheet::-webkit-scrollbar-thumb:hover,
+.detail-panel::-webkit-scrollbar-thumb:hover,
+.stats-panel::-webkit-scrollbar-thumb:hover,
+.notif-panel::-webkit-scrollbar-thumb:hover,
+.filter-panel::-webkit-scrollbar-thumb:hover,
+.cat-manager-panel::-webkit-scrollbar-thumb:hover,
+.cal-day-panel::-webkit-scrollbar-thumb:hover,
+.map-sidebar::-webkit-scrollbar-thumb:hover,
+#focus-overlay .focus-wrap::-webkit-scrollbar-thumb:hover,
+#wrapped-overlay .wrapped-slide::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 148, 58, 0.45);
+  border-color: rgba(201, 148, 58, 0.2);
+  box-shadow: 0 0 8px rgba(201, 148, 58, 0.15);
+}
+
+.sheet::-webkit-scrollbar-corner,
+.detail-panel::-webkit-scrollbar-corner,
+.stats-panel::-webkit-scrollbar-corner,
+.notif-panel::-webkit-scrollbar-corner,
+.filter-panel::-webkit-scrollbar-corner,
+.cat-manager-panel::-webkit-scrollbar-corner,
+.cal-day-panel::-webkit-scrollbar-corner,
+.map-sidebar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox */
+.sheet,
+.detail-panel,
+.stats-panel,
+.notif-panel,
+.filter-panel,
+.cat-manager-panel,
+.cal-day-panel,
+.map-sidebar,
+#focus-overlay .focus-wrap,
+#wrapped-overlay .wrapped-slide {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 148, 58, 0.25) transparent;
+}
+
+/* Hover state para Firefox */
+.sheet:hover,
+.detail-panel:hover,
+.stats-panel:hover,
+.notif-panel:hover,
+.filter-panel:hover,
+.cat-manager-panel:hover,
+.cal-day-panel:hover,
+.map-sidebar:hover {
+  scrollbar-color: rgba(201, 148, 58, 0.4) transparent;
+}
+
+/* ════════════════════════════════════════
+   FIX 2: Scrollbar para la página principal (events-grid en list/cal view)
+   ════════════════════════════════════════ */
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 8px;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
+  background: rgba(9, 8, 10, 0.8);
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  background: rgba(201, 148, 58, 0.2);
+  border-radius: 4px;
+  border: 1px solid rgba(201, 148, 58, 0.05);
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 148, 58, 0.4);
+  box-shadow: 0 0 10px rgba(201, 148, 58, 0.1);
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 148, 58, 0.25) rgba(9, 8, 10, 0.8);
+}
+
+/* ════════════════════════════════════════
+   FIX 3: Scrollbar para filter-bar y otras barras horizontales
+   ════════════════════════════════════════ */
+
+.filter-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.filter-bar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.filter-bar::-webkit-scrollbar-thumb {
+  background: rgba(201, 148, 58, 0.2);
+  border-radius: 2px;
+}
+
+.filter-bar::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 148, 58, 0.4);
+}
+
+/* ════════════════════════════════════════
+   FIX 4: Scrollbar para textarea y inputs con scroll
+   ════════════════════════════════════════ */
+
+textarea::-webkit-scrollbar,
+.form-group textarea::-webkit-scrollbar {
+  width: 5px;
+}
+
+textarea::-webkit-scrollbar-track,
+.form-group textarea::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 3px;
+}
+
+textarea::-webkit-scrollbar-thumb,
+.form-group textarea::-webkit-scrollbar-thumb {
+  background: rgba(201, 148, 58, 0.2);
+  border-radius: 3px;
+}
+
+textarea::-webkit-scrollbar-thumb:hover,
+.form-group textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 148, 58, 0.4);
+}
+
+textarea {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(201, 148, 58, 0.25) rgba(255, 255, 255, 0.03);
+}
+
+/* ════════════════════════════════════════
+   FIX 5: Ocultar scrollbar nativa fea en móvil
+   ════════════════════════════════════════ */
+
+@media (hover: none) and (pointer: coarse) {
+  .sheet::-webkit-scrollbar,
+  .detail-panel::-webkit-scrollbar,
+  .stats-panel::-webkit-scrollbar,
+  .notif-panel::-webkit-scrollbar,
+  .filter-panel::-webkit-scrollbar,
+  .cat-manager-panel::-webkit-scrollbar,
+  .cal-day-panel::-webkit-scrollbar,
+  .map-sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sheet,
+  .detail-panel,
+  .stats-panel,
+  .notif-panel,
+  .filter-panel,
+  .cat-manager-panel,
+  .cal-day-panel,
+  .map-sidebar {
+    scrollbar-width: none;
+  }
+}

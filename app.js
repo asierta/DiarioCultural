@@ -1682,6 +1682,91 @@ function buildPrintHTML(list){
   </body></html>`;
 }
 
+// ── FIX: Scroll horizontal de eventos relacionados en PC ─────────────────
+
+// 1. Inyectar flechas de navegación en el panel de detalle
+function _injectRelatedNav(container) {
+  if (!container) return;
+  // Solo en PC (hover disponible)
+  if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+
+  const section = container.querySelector('.related-section');
+  if (!section || section.querySelector('.related-nav')) return;
+
+  const prev = document.createElement('button');
+  prev.className = 'related-nav prev';
+  prev.innerHTML = '‹';
+  prev.title = 'Anterior';
+  prev.onclick = () => scrollRelated(-1);
+
+  const next = document.createElement('button');
+  next.className = 'related-nav next';
+  next.innerHTML = '›';
+  next.title = 'Siguiente';
+  next.onclick = () => scrollRelated(1);
+
+  section.appendChild(prev);
+  section.appendChild(next);
+}
+
+function scrollRelated(dir) {
+  const scroll = document.querySelector('.related-scroll');
+  if (!scroll) return;
+  const card = scroll.querySelector('.rel-card');
+  const step = card ? (card.offsetWidth + 10) : 160; // ancho + gap
+  scroll.scrollBy({ left: dir * step, behavior: 'smooth' });
+}
+
+// 2. Drag con ratón para scroll horizontal
+function _attachRelatedDrag(container) {
+  const scroll = container?.querySelector('.related-scroll');
+  if (!scroll) return;
+
+  let isDown = false, startX, scrollLeft;
+
+  scroll.addEventListener('mousedown', e => {
+    isDown = true;
+    scroll.classList.add('grabbing');
+    startX = e.pageX - scroll.offsetLeft;
+    scrollLeft = scroll.scrollLeft;
+  });
+
+  scroll.addEventListener('mouseleave', () => { isDown = false; scroll.classList.remove('grabbing'); });
+  scroll.addEventListener('mouseup', () => { isDown = false; scroll.classList.remove('grabbing'); });
+
+  scroll.addEventListener('mousemove', e => {
+    if (!isDown) return;
+    e.preventDefault();
+    const x = e.pageX - scroll.offsetLeft;
+    const walk = (x - startX) * 1.2; // multiplicador para sensibilidad
+    scroll.scrollLeft = scrollLeft - walk;
+  });
+
+  // Wheel horizontal
+  scroll.addEventListener('wheel', e => {
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      e.preventDefault();
+      scroll.scrollLeft += e.deltaY;
+    }
+  }, { passive: false });
+}
+
+// 3. Modificar _renderDetailPanel para inyectar navegación
+// Guardamos referencia original y la envolvemos
+const _origRenderDetailPanel = _renderDetailPanel;
+_renderDetailPanel = function(ev) {
+  _origRenderDetailPanel(ev);
+  const panel = document.getElementById('detail-panel');
+  if (panel) {
+    setTimeout(() => {
+      _injectRelatedNav(panel);
+      _attachRelatedDrag(panel);
+    }, 50);
+  }
+};
+
+
+
 // ── Init ───────────────────────────────────────────────────────────────────
 (function(){
   const wrap=document.createElement('div'); wrap.className='bg-orbs';

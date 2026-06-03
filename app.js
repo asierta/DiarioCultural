@@ -1565,7 +1565,7 @@ function svgBarChart(months,maxVal){
 
 // ── Export ─────────────────────────────────────────────────────────────────
 function exportCSV(){
-  const cols=['title','date','cat','venue','city','address','rating','companions','notes','maps_url'],headers=['Título','Fecha','Categoría','Lugar','Ciudad','Dirección','Valoración','Acompañantes','Notas','Mapa'];
+  const cols=['title','date','cat','venue','city','address','rating','price','companions','notes','maps_url'],headers=['Título','Fecha','Categoría','Lugar','Ciudad','Dirección','Valoración','Precio (€)','Acompañantes','Notas','Mapa'];
   const esc=v=>`"${(v??'').toString().replace(/"/g,'""')}"`;
   const csv=[headers.map(esc).join(','),...events.map(ev=>cols.map(c=>esc(ev[c])).join(','))].join('\n');
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob);
@@ -1578,9 +1578,51 @@ function exportPDF(){
   win.document.write(buildPrintHTML(sorted));win.document.close();win.focus();setTimeout(()=>win.print(),600);
 }
 function buildPrintHTML(list){
-  const starsStr=r=>{if(!r)return '';let s='';for(let i=1;i<=5;i++)s+=r>=i?'★':r>=i-.5?'½':'☆';return s;};
-  const rows=list.map(ev=>{const loc=[ev.venue,ev.city].filter(Boolean).join(', '),meta=[ev.date?fmtDate(ev.date):'',loc,ev.companions?'👥 '+ev.companions:''].filter(Boolean).join('  ·  ');return`<div class="ev"><div class="ev-header"><span class="ev-cat">${CATS[ev.cat]?.emoji||''} ${ev.cat||''}</span>${ev.rating?`<span class="ev-stars">${starsStr(ev.rating)}</span>`:''}</div><div class="ev-title">${escHtml(ev.title)}</div>${meta?`<div class="ev-meta">${escHtml(meta)}</div>`:''} ${ev.notes?`<div class="ev-notes">${escHtml(ev.notes)}</div>`:''}</div>`;}).join('');
-  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Diario Cultural</title><style>*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}body{font-family:Georgia,'Times New Roman',serif;color:#1a1a1a;background:#fff;padding:48px}.page-header{text-align:center;padding-bottom:28px;border-bottom:2px solid #1a1a1a;margin-bottom:36px}.page-header h1{font-size:38px;font-weight:300;font-style:italic;letter-spacing:-1px}.page-header h1 em{color:#c9943a}.page-header p{color:#888;font-size:13px;margin-top:6px;font-family:system-ui}.ev{padding:18px 0;border-bottom:1px solid #eee;break-inside:avoid;page-break-inside:avoid}.ev-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}.ev-cat{font-family:system-ui;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#999}.ev-stars{font-size:13px;color:#c9943a;letter-spacing:2px}.ev-title{font-size:22px;font-weight:300;font-style:italic;line-height:1.2;margin-bottom:5px}.ev-meta{font-family:system-ui;font-size:12px;color:#777;margin-bottom:6px}.ev-notes{font-size:13px;color:#555;line-height:1.65;font-style:italic;margin-top:6px;padding-top:6px;border-top:1px dashed #eee}@media print{body{padding:28px}@page{margin:1.5cm}}</style></head><body><div class="page-header"><h1>Diario <em>Cultural</em></h1><p>${list.length} eventos · Exportado el ${new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</p></div>${rows}</body></html>`;
+  const starsStr = r => { if(!r) return ''; let s=''; for(let i=1;i<=5;i++) s+=r>=i?'★':r>=i-.5?'½':'☆'; return s; };
+  const fmtPrice = p => p>0 ? p.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €' : '';
+  const rows = list.map(ev => {
+    const loc  = [ev.venue, ev.city].filter(Boolean).join(', ');
+    const meta = [ev.date?fmtDate(ev.date):'', loc, ev.companions?'👥 '+ev.companions:''].filter(Boolean).join('  ·  ');
+    const priceStr = fmtPrice(ev.price||0);
+    return `<div class="ev">
+      <div class="ev-header">
+        <span class="ev-cat">${CATS[ev.cat]?.emoji||''} ${ev.cat||''}</span>
+        <span class="ev-right">
+          ${ev.rating ? `<span class="ev-stars">${starsStr(ev.rating)}</span>` : ''}
+          ${priceStr  ? `<span class="ev-price">${priceStr}</span>` : ''}
+        </span>
+      </div>
+      <div class="ev-title">${escHtml(ev.title)}</div>
+      ${meta  ? `<div class="ev-meta">${escHtml(meta)}</div>` : ''}
+      ${ev.notes ? `<div class="ev-notes">${escHtml(ev.notes)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const css = `
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Georgia,'Times New Roman',serif;color:#1a1a1a;background:#fff;padding:48px}
+    .page-header{text-align:center;padding-bottom:28px;border-bottom:2px solid #1a1a1a;margin-bottom:36px}
+    .page-header h1{font-size:38px;font-weight:300;font-style:italic;letter-spacing:-1px}
+    .page-header h1 em{color:#c9943a}
+    .page-header p{color:#888;font-size:13px;margin-top:6px;font-family:system-ui}
+    .ev{padding:18px 0;border-bottom:1px solid #eee;break-inside:avoid;page-break-inside:avoid}
+    .ev-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+    .ev-right{display:flex;align-items:center;gap:10px}
+    .ev-cat{font-family:system-ui;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#999}
+    .ev-stars{font-size:13px;color:#c9943a;letter-spacing:2px}
+    .ev-price{font-family:system-ui;font-size:12px;color:#888;font-weight:500}
+    .ev-title{font-size:22px;font-weight:300;font-style:italic;line-height:1.2;margin-bottom:5px}
+    .ev-meta{font-family:system-ui;font-size:12px;color:#777;margin-bottom:6px}
+    .ev-notes{font-size:13px;color:#555;line-height:1.65;font-style:italic;margin-top:6px;padding-top:6px;border-top:1px dashed #eee}
+    @media print{body{padding:28px}@page{margin:1.5cm}}
+  `;
+
+  const exported = new Date().toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'});
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Diario Cultural</title><style>${css}</style></head><body>
+    <div class="page-header"><h1>Diario <em>Cultural</em></h1>
+    <p>${list.length} eventos · Exportado el ${exported}</p></div>
+    ${rows}
+  </body></html>`;
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────

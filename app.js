@@ -1166,7 +1166,7 @@ function buildRelatedEventsHtml(ev) {
       if (shared.length) reason = `👥 ${escHtml(shared[0])}`;
       else if (rel.city === ev.city) reason = `🏙 ${escHtml(rel.city)}`;
     }
-    return `<div class="rel-card" onclick="_renderDetailPanel(events.find(e=>e.id===${rel.id}));document.querySelector('.detail-panel').scrollTo({top:0,behavior:'smooth'})">
+    return `<div class="rel-card" data-rel-id="${rel.id}">
       ${thumb}
       <div class="rel-body">
         <div class="rel-title">${escHtml(rel.title)}</div>
@@ -1763,6 +1763,18 @@ loadEvents();
 window.addEventListener('online',async()=>{isOnline=true;updateOfflineBanner();toast('✓ Conexión restaurada — sincronizando…');await loadEvents();await processSyncQueue();subscribeRealtime();});
 window.addEventListener('offline',()=>{isOnline=false;updateOfflineBanner();unsubscribeRealtime();toast('Sin conexión — modo offline activo',true);});
 updateOfflineBanner();
+
+// Delegación persistente para tarjetas relacionadas en el panel de detalle
+document.getElementById('detail-panel').addEventListener('click', e => {
+  const card = e.target.closest('[data-rel-id]');
+  if (!card) return;
+  const relEv = events.find(ev => ev.id === parseInt(card.dataset.relId));
+  if (!relEv) return;
+  _detailId = relEv.id;
+  _renderDetailPanel(relEv);
+  document.getElementById('detail-panel').scrollTo({ top: 0, behavior: 'smooth' });
+  _attachSwipe(document.getElementById('detail-panel'), closeDetail);
+});
 
 // ── MEJORA: altura de tarjeta flexible (aspect-ratio) ─────────────────────
 // Aplicado via CSS — ver style.css

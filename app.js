@@ -1122,7 +1122,64 @@ function _renderDetailPanel(ev) {
         <button class="detail-action-btn" onclick="shareEvent(${ev.id})">📤 Enviar</button>
         <button class="detail-action-btn btn-del" onclick="deleteEvent(${ev.id})">✕ Borrar</button>
       </div>
+      ${buildRelatedEventsHtml(ev)}
     </div>`;
+}
+
+// ── Eventos relacionados ──────────────────────────────────────────────────
+function buildRelatedEventsHtml(ev) {
+  const companions = getCompanions(ev);
+
+  // Puntuación de relación: misma categoría (+3), mismo venue (+3),
+  // misma ciudad (+1), compañero en común (+2 c/u), mismo año (+1)
+  const evYear = ev.date?.slice(0, 4);
+
+  const scored = events
+    .filter(e => e.id !== ev.id)
+    .map(e => {
+      let score = 0;
+      if (e.cat === ev.cat) score += 3;
+      if (ev.venue && e.venue && e.venue === ev.venue) score += 3;
+      if (ev.city && e.city && e.city === ev.city) score += 1;
+      if (e.date?.slice(0, 4) === evYear) score += 1;
+      getCompanions(e).forEach(c => { if (companions.includes(c)) score += 2; });
+      return { e, score };
+    })
+    .filter(d => d.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4);
+
+  if (!scored.length) return '';
+
+  const items = scored.map(({ e: rel }) => {
+    const cat  = CATS[rel.cat] || CATS['Otro'];
+    const pos  = rel.image_position || '50% 50%';
+    const thumb = rel.image_url
+      ? `<div class="rel-thumb" style="background-image:url('${rel.image_url}');background-size:cover;background-position:${pos}"></div>`
+      : `<div class="rel-thumb rel-thumb-placeholder" style="--rc:${cat.color}"><span>${cat.emoji}</span></div>`;
+    // Reason chip: why is this related?
+    let reason = '';
+    if (rel.cat === ev.cat) reason = `${cat.emoji} misma categoría`;
+    else if (ev.venue && rel.venue === ev.venue) reason = `📍 mismo lugar`;
+    else {
+      const shared = getCompanions(rel).filter(c => companions.includes(c));
+      if (shared.length) reason = `👥 ${escHtml(shared[0])}`;
+      else if (rel.city === ev.city) reason = `🏙 ${escHtml(rel.city)}`;
+    }
+    return `<div class="rel-card" onclick="_renderDetailPanel(events.find(e=>e.id===${rel.id}));document.querySelector('.detail-panel').scrollTo({top:0,behavior:'smooth'})">
+      ${thumb}
+      <div class="rel-body">
+        <div class="rel-title">${escHtml(rel.title)}</div>
+        <div class="rel-meta">${rel.date ? fmtDate(rel.date) : ''}${rel.date && reason ? ' · ' : ''}${reason}</div>
+        ${rel.rating ? `<div class="rel-stars stars-row" style="font-size:10px">${starsHtml(rel.rating)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="related-section">
+    <div class="related-title">También en tu diario</div>
+    <div class="related-scroll">${items}</div>
+  </div>`;
 }
 
 // Inline rating save

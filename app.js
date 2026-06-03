@@ -86,407 +86,255 @@ function highlight(text, query) {
 function escHtml(str) { return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function getCompanions(ev) { if (!ev.companions) return []; return ev.companions.split(',').map(c => c.trim()).filter(Boolean); }
 
-// ── MEJORA: búsqueda incluye año y categoría ──────────────────────────────
-function matchesSearch(ev, q) {
-  const ql = q.toLowerCase();
-  return ev.title?.toLowerCase().includes(ql) ||
-    ev.venue?.toLowerCase().includes(ql) ||
-    ev.city?.toLowerCase().includes(ql)  ||
-    ev.notes?.toLowerCase().includes(ql) ||
-    ev.companions?.toLowerCase().includes(ql) ||
-    ev.date?.slice(0,4).includes(ql) ||
-    ev.cat?.toLowerCase().includes(ql);
-}
+// ── FUSE.JS INTEGRATION ───────────────────────────────────────────────────
 
-// ── IndexedDB ─────────────────────────────────────────────────────────────
-const IDB_NAME = 'diario-cultural', IDB_VER = 2;
-function idbOpen() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, IDB_VER);
-    req.onupgradeneeded = e => {
-      const d = e.target.result;
-      if (!d.objectStoreNames.contains('events')) d.createObjectStore('events', { keyPath: 'id' });
-      if (!d.objectStoreNames.contains('queue'))  d.createObjectStore('queue', { autoIncrement: true });
-    };
-    req.onsuccess = e => resolve(e.target.result); req.onerror = e => reject(e.target.error);
-  });
-}
-async function idbSaveAll(evts) {
-  try {
-    const d = await idbOpen(), tx = d.transaction('events', 'readwrite'), st = tx.objectStore('events');
-    await new Promise((res,rej) => { const r = st.clear(); r.onsuccess = res; r.onerror = rej; });
-    evts.forEach(ev => st.put(ev));
-    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
-  } catch(_) {}
-}
-async function idbUpsert(ev) {
-  try { const d = await idbOpen(), tx = d.transaction('events', 'readwrite'); tx.objectStore('events').put(ev); return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; }); } catch(_) {}
-}
-async function idbRemove(id) {
-  try { const d = await idbOpen(), tx = d.transaction('events', 'readwrite'); tx.objectStore('events').delete(id); return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; }); } catch(_) {}
-}
-async function idbLoadAll() {
-  try { const d = await idbOpen(); return new Promise((resolve, reject) => { const req = d.transaction('events', 'readonly').objectStore('events').getAll(); req.onsuccess = () => resolve(req.result || []); req.onerror = () => reject(req.error); }); } catch(_) { return []; }
-}
-async function idbQueueOp(op) {
-  try { const d = await idbOpen(), tx = d.transaction('queue', 'readwrite'); tx.objectStore('queue').add(op); return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; }); } catch(_) {}
-}
-async function idbGetQueue() {
-  try { const d = await idbOpen(); return new Promise((resolve, reject) => { const req = d.transaction('queue', 'readonly').objectStore('queue').getAll(); req.onsuccess = () => resolve(req.result || []); req.onerror = () => reject(req.error); }); } catch(_) { return []; }
-}
-async function idbClearQueue() {
-  try { const d = await idbOpen(), tx = d.transaction('queue', 'readwrite'); tx.objectStore('queue').clear(); return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; }); } catch(_) {}
-}
-function updateOfflineBanner() { const b = document.getElementById('offline-banner'); if (b) b.classList.toggle('visible', !isOnline); }
-async function processSyncQueue() {
-  if (!isOnline) return; const queue = await idbGetQueue(); if (!queue.length) return;
-  let synced = 0; const failed = [];
-  for (const op of queue) {
-    try {
-      if (op.type === 'insert') { const { data, error } = await db.from('events').insert([op.payload]).select().single(); if (!error && data) { events = events.map(e => e.id === op.tempId ? data : e); await idbRemove(op.tempId); await idbUpsert(data); synced++; } else failed.push(op); }
-      else if (op.type === 'update') { const { data, error } = await db.from('events').update(op.payload).eq('id', op.id).select().single(); if (!error && data) { events = events.map(e => e.id === op.id ? data : e); await idbUpsert(data); synced++; } else failed.push(op); }
-      else if (op.type === 'delete') { const { error } = await db.from('events').delete().eq('id', op.id); if (!error) { if (op.imageUrl) deleteImageFromUrl(op.imageUrl).catch(() => {}); synced++; } else failed.push(op); }
-    } catch(_) { failed.push(op); }
+// Fallback fuzzy search (usado si Fuse.js no carga)
+function _fallbackFuzzyScore(text, query) {
+  if (!text || !query) return query ? 0 : 1;
+  const t = text.toLowerCase(), q = query.toLowerCase();
+  if (t === q) return 100;
+  if (t.includes(q)) return 80 + (q.length / t.length) * 20;
+  if (t.startsWith(q)) return 70 + (q.length / t.length) * 10;
+
+  // Subsecuencia
+  let ti = 0, qi = 0, matched = 0, gaps = 0;
+  while (ti < t.length && qi < q.length) {
+    if (t[ti] === q[qi]) { matched++; qi++; }
+    else if (matched > 0) gaps++;
+    ti++;
   }
-  await idbClearQueue(); for (const op of failed) await idbQueueOp(op);
-  if (synced > 0) { render(); toast(`✓ ${synced} cambio${synced > 1 ? 's' : ''} sincronizado${synced > 1 ? 's' : ''}`); }
-}
+  if (qi === q.length) return Math.max(10, 50 - gaps * 5 + matched * 3);
 
-// ── Auth ──────────────────────────────────────────────────────────────────
-async function doLogin() {
-  const email = document.getElementById('l-email').value.trim(), pass = document.getElementById('l-pass').value;
-  if (!email || !pass) { showLoginError('Introduce tu email y contraseña.'); return; }
-  const btn = document.getElementById('login-btn'); btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Entrando…';
-  const { error } = await db.auth.signInWithPassword({ email, password: pass });
-  btn.disabled = false; btn.textContent = 'Entrar';
-  if (error) { showLoginError('Email o contraseña incorrectos.'); return; }
-  hideLoginScreen();
-  subscribeRealtime();
-}
-function showLoginError(msg) { const el = document.getElementById('login-error'); el.textContent = msg; el.style.display = 'block'; }
-async function doLogout() { await db.auth.signOut(); document.getElementById('login-screen').style.display = 'flex'; document.getElementById('l-pass').value = ''; document.getElementById('login-error').style.display = 'none'; }
-function hideLoginScreen() { document.getElementById('login-screen').style.display = 'none'; }
-document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') doLogin(); });
-
-// ── Data ──────────────────────────────────────────────────────────────────
-async function loadEvents() {
-  let renderedFromCache = false;
-  try { const cached = await idbLoadAll(); if (cached.length) { events = cached.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0)); render(); renderedFromCache = true; } } catch(_) {}
-  if (!navigator.onLine) { isOnline = false; updateOfflineBanner(); if (!events.length) toast('Sin conexión. No hay datos guardados localmente.', true); return; }
-  const { data, error } = await db.from('events').select('*').order('created_at', { ascending: false });
-  if (error) { toast('Error al conectar. Mostrando datos guardados.', true); return; }
-  const fresh = data || [], catKeysBefore = Object.keys(CATS).sort().join(',');
-  await loadCustomCatsFromDB();
-  fresh.forEach(ev => { if (ev.cat && !CATS[ev.cat]) CATS[ev.cat] = { emoji: '✦', color: CUSTOM_COLORS[Object.keys(CATS).length % CUSTOM_COLORS.length] }; });
-  const catsChanged = Object.keys(CATS).sort().join(',') !== catKeysBefore;
-  const changed = !renderedFromCache || catsChanged || fresh.length !== events.length || fresh.some((ev, i) => ev.id !== events[i]?.id || ev.updated_at !== events[i]?.updated_at);
-  events = fresh; await idbSaveAll(events); if (changed) render(); checkAndNotify();
-}
-
-// ── Stars ─────────────────────────────────────────────────────────────────
-function starsHtml(rating) {
-  if (!rating) return '';
-  let out = '';
-  for (let i = 1; i <= 5; i++) {
-    if (rating >= i) out += '<span class="s-star s-full">★</span>';
-    else if (rating >= i - 0.5) out += '<span class="s-star s-half"><span class="s-b">★</span><span class="s-f">★</span></span>';
-    else out += '<span class="s-star s-empty">★</span>';
+  // Levenshtein simple
+  if (Math.abs(t.length - q.length) <= 2) {
+    const dist = _levenshtein(t, q);
+    if (dist <= 2) return Math.max(5, 40 - dist * 15);
   }
-  return out;
-}
-function starsCanvasText(rating) {
-  let s = '';
-  for (let i = 1; i <= 5; i++) { s += rating >= i ? '★' : rating >= i - 0.5 ? '⯨' : '☆'; }
-  return s;
+  return 0;
 }
 
-// ── View toggle ───────────────────────────────────────────────────────────
-function setView(mode) {
-  viewMode = mode; localStorage.setItem('viewMode', mode);
-  document.getElementById('btn-grid').classList.toggle('active', mode === 'grid');
-  document.getElementById('btn-list').classList.toggle('active', mode === 'list');
-  document.getElementById('btn-cal')?.classList.toggle('active', mode === 'calendar');
-  const grid = document.getElementById('events-grid');
-  grid.classList.toggle('list-view', mode === 'list');
-  grid.classList.toggle('cal-mode', mode === 'calendar');
-  if (mode === 'calendar') renderCalendar(); else renderGrid();
+function _levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (m === 0) return n; if (n === 0) return m;
+  const prev = new Array(n + 1), curr = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      curr[j] = a[i-1] === b[j-1] ? prev[j-1] : 1 + Math.min(prev[j], curr[j-1], prev[j-1]);
+    }
+    for (let j = 0; j <= n; j++) prev[j] = curr[j];
+  }
+  return prev[n];
 }
 
-// ── Search ────────────────────────────────────────────────────────────────
-let _searchTimer = null;
-function onSearch(e) {
-  searchQuery = e.target.value.trim();
-  document.getElementById('search-clear').style.display = searchQuery ? 'block' : 'none';
-  clearTimeout(_searchTimer); _searchTimer = setTimeout(renderGrid, 180);
-}
-function clearSearch() {
-  searchQuery = ''; document.getElementById('search-input').value = '';
-  document.getElementById('search-clear').style.display = 'none'; renderGrid();
+function _normalizeText(str) {
+  if (!str) return '';
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
-// ── Sort ──────────────────────────────────────────────────────────────────
-function onSort(e) { sortBy = e.target.value; renderGrid(); }
-function sortedEvents(list) {
-  const copy = [...list];
-  if (sortBy === 'recent') return copy.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-  if (sortBy === 'oldest') return copy.sort((a,b) => (a.date||'') > (b.date||'') ? 1 : -1);
-  if (sortBy === 'newest') return copy.sort((a,b) => (a.date||'') > (b.date||'') ? -1 : 1);
-  if (sortBy === 'rating') return copy.sort((a,b) => (b.rating||0) - (a.rating||0));
-  if (sortBy === 'title')  return copy.sort((a,b) => a.title.localeCompare(b.title, 'es'));
-  return copy;
-}
+let _fuseInstance = null;
+let _fuseIndex = null;
 
-// ── Image ─────────────────────────────────────────────────────────────────
-function onImageSelected(e) {
-  const file = e.target.files[0]; if (!file) return;
-  pendingImageFile = file; focusX = 50; focusY = 50;
-  const url = URL.createObjectURL(file);
-  showThumb(url, 50, 50); document.getElementById('img-label-text').textContent = 'Imagen seleccionada ✓';
-  openFocusPickerWithUrl(url);
-}
-function showThumb(url, x, y) {
-  const wrap = document.getElementById('img-thumb-wrap'), img = document.getElementById('img-thumb');
-  img.src = url; wrap.style.setProperty('--thumb-pos', `${x}% ${y}%`); wrap.style.display = 'block';
-}
-function removeImage(e) {
-  e.stopPropagation(); pendingImageFile = null; removeExistingImage = true; focusX = 50; focusY = 50;
-  document.getElementById('img-thumb-wrap').style.display = 'none';
-  document.getElementById('img-thumb').src = '';
-  document.getElementById('img-label-text').textContent = 'Seleccionar imagen…';
-  document.getElementById('f-image').value = ''; setProgress(0);
-}
+function _buildFuseIndex() {
+  if (typeof Fuse === 'undefined') {
+    console.warn('Fuse.js no está cargado — usando búsqueda exacta');
+    return null;
+  }
 
-// ── Focus picker ──────────────────────────────────────────────────────────
-function openFocusPicker() { const src = document.getElementById('img-thumb').src; if (!src) return; openFocusPickerWithUrl(src); }
-function openFocusPickerWithUrl(url) {
-  tempFocusX = focusX; tempFocusY = focusY;
-  document.getElementById('focus-img').src = url;
-  updateFocusUI(tempFocusX, tempFocusY);
-  document.getElementById('focus-overlay').classList.add('open');
-  const wrap = document.getElementById('focus-img-wrap');
-  wrap.addEventListener('mousedown', onFocusDrag);
-  wrap.addEventListener('touchstart', onFocusTouchDrag, { passive: false });
-}
-function closeFocusPicker() { document.getElementById('focus-overlay').classList.remove('open'); removeFocusListeners(); }
-function confirmFocus() {
-  focusX = tempFocusX; focusY = tempFocusY;
-  document.getElementById('img-thumb-wrap').style.setProperty('--thumb-pos', `${focusX}% ${focusY}%`);
-  closeFocusPicker();
-}
-function removeFocusListeners() {
-  const wrap = document.getElementById('focus-img-wrap');
-  wrap.removeEventListener('mousedown', onFocusDrag); wrap.removeEventListener('touchstart', onFocusTouchDrag);
-}
-function getPctFromEvent(e, el) {
-  const rect = el.getBoundingClientRect();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  return { x: Math.max(0, Math.min(100, Math.round((clientX - rect.left) / rect.width  * 100))),
-           y: Math.max(0, Math.min(100, Math.round((clientY - rect.top)  / rect.height * 100))) };
-}
-function updateFocusUI(x, y) {
-  const wrap = document.getElementById('focus-img-wrap'), ch = document.getElementById('focus-crosshair');
-  wrap.style.setProperty('--focus-pos', `${x}% ${y}%`); ch.style.left = x + '%'; ch.style.top = y + '%';
-}
-function onFocusDrag(e) {
-  e.preventDefault(); const wrap = document.getElementById('focus-img-wrap');
-  const move = ev => { const {x,y} = getPctFromEvent(ev, wrap); tempFocusX=x; tempFocusY=y; updateFocusUI(x,y); };
-  const up   = ()  => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
-  const {x,y} = getPctFromEvent(e, wrap); tempFocusX=x; tempFocusY=y; updateFocusUI(x,y);
-  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
-}
-function onFocusTouchDrag(e) {
-  e.preventDefault(); const wrap = document.getElementById('focus-img-wrap');
-  const move = ev => { const {x,y} = getPctFromEvent(ev, wrap); tempFocusX=x; tempFocusY=y; updateFocusUI(x,y); };
-  const end  = ()  => { document.removeEventListener('touchmove', move); document.removeEventListener('touchend', end); };
-  const {x,y} = getPctFromEvent(e, wrap); tempFocusX=x; tempFocusY=y; updateFocusUI(x,y);
-  document.addEventListener('touchmove', move, { passive: false }); document.addEventListener('touchend', end);
-}
-async function compressImage(file, maxW = 1400, quality = 0.85) {
-  return new Promise(resolve => {
-    const img = new Image(), url = URL.createObjectURL(file);
-    img.onload = () => {
-      let w = img.width, h = img.height;
-      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
-      const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h); URL.revokeObjectURL(url);
-      canvas.toBlob(resolve, 'image/jpeg', quality);
-    }; img.src = url;
-  });
-}
-async function uploadImage(file) {
-  setProgress(10); const blob = await compressImage(file); setProgress(40);
-  const name = `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
-  const { error } = await db.storage.from('event-images').upload(name, blob, { contentType: 'image/jpeg' });
-  setProgress(90); if (error) { setProgress(0); throw error; }
-  const { data: { publicUrl } } = db.storage.from('event-images').getPublicUrl(name);
-  setProgress(0); return publicUrl;
-}
-async function deleteImageFromUrl(url) {
-  if (!url) return; const parts = url.split('/event-images/');
-  if (parts.length < 2) return; await db.storage.from('event-images').remove([parts[1]]);
-}
-
-// ── Form ──────────────────────────────────────────────────────────────────
-function openForm(ev = null) {
-  editingId = ev ? ev.id : null; pendingImageFile = null; removeExistingImage = false;
-  existingImageUrl = ev?.image_url || null;
-  focusX = parseInt((ev?.image_position || '50% 50%').split(' ')[0]) || 50;
-  focusY = parseInt((ev?.image_position || '50% 50%').split(' ')[1]) || 50;
-  const isEdit = !!(ev?.id);
-  document.getElementById('sheet-title').textContent = isEdit ? 'Editar evento' : (ev ? 'Duplicar evento' : 'Nuevo evento');
-  document.getElementById('save-btn').textContent    = isEdit ? 'Guardar cambios' : (ev ? 'Guardar copia' : 'Guardar evento');
-  document.getElementById('f-title').value     = ev?.title   || '';
-  document.getElementById('f-date').value      = ev?.date    || new Date().toISOString().split('T')[0];
-  rebuildCatSelect(ev?.cat || 'Concierto');
-  document.getElementById('f-venue').value     = ev?.venue   || '';
-  document.getElementById('f-city').value      = ev?.city    || '';
-  document.getElementById('f-address').value   = ev?.address || '';
-  // MEJORA: campo maps_url ahora visible y editable
-  document.getElementById('f-maps-url').value  = ev?.maps_url || '';
-  document.getElementById('f-notes').value     = ev?.notes   || '';
-  document.getElementById('f-companions').value = ev?.companions || '';
-  // MEJORA: campo precio
-  const priceInp = document.getElementById('f-price');
-  if (priceInp) priceInp.value = ev?.price != null ? ev.price : '';
-  document.getElementById('f-image').value = ''; setProgress(0);
-  const wrap = document.getElementById('img-thumb-wrap');
-  if (ev?.image_url) { showThumb(ev.image_url, focusX, focusY); document.getElementById('img-label-text').textContent = 'Cambiar imagen…'; }
-  else { wrap.style.display = 'none'; document.getElementById('img-thumb').src = ''; document.getElementById('img-label-text').textContent = 'Seleccionar imagen…'; }
-  formRating = ev?.rating || 0;
-  const ratingInp = document.getElementById('f-rating'); if (ratingInp) ratingInp.value = formRating;
-  const starCont = document.getElementById('star-input'); if (starCont) starCont.innerHTML = '';
-  renderStars(); document.getElementById('overlay').classList.add('open'); showStep(1); setTimeout(()=>_attachSwipe(document.querySelector('.sheet'), closeForm), 50);
-}
-function closeForm() { document.getElementById('overlay').classList.remove('open'); editingId = null; currentStep = 1; }
-function overlayClick(e) { if (e.target === document.getElementById('overlay')) closeForm(); }
-
-function initStarInput() {
-  const container = document.getElementById('star-input'); if (!container) return;
-  container.innerHTML = [1,2,3,4,5].map(i =>
-    `<span class="sip" data-star="${i}"><button type="button" class="sip-l" data-val="${i - 0.5}"><span>★</span></button><button type="button" class="sip-r" data-val="${i}"><span>★</span></button></span>`
-  ).join('');
-  let touchFired = false;
-  container.querySelectorAll('button[data-val]').forEach(btn => {
-    const val = parseFloat(btn.dataset.val);
-    btn.addEventListener('touchend', e => { e.preventDefault(); touchFired = true; setTimeout(() => { touchFired = false; }, 600); setStarRating(formRating === val ? 0 : val); }, { passive: false });
-    btn.addEventListener('click', () => { if (touchFired) return; setStarRating(formRating === val ? 0 : val); });
-  });
-  container.querySelectorAll('.sip').forEach(sip => {
-    const starIdx = parseInt(sip.dataset.star);
-    sip.addEventListener('mouseenter', () => { hoverRating = starIdx; updateStarClasses(); });
-    sip.addEventListener('mouseleave', () => { hoverRating = 0; updateStarClasses(); });
-  });
-}
-function setStarRating(val) { formRating = val; hoverRating = 0; const inp = document.getElementById('f-rating'); if (inp) inp.value = val; updateStarClasses(); }
-function updateStarClasses() {
-  const display = hoverRating || formRating;
-  document.querySelectorAll('#star-input button[data-val]').forEach(btn => { btn.classList.toggle('on', display >= parseFloat(btn.dataset.val)); });
-}
-function renderStars() { const c = document.getElementById('star-input'); if (!c) return; if (!c.querySelector('button[data-val]')) initStarInput(); updateStarClasses(); }
-function setRating(n) { setStarRating(n); }
-
-async function saveEvent() {
-  if (saving) return;
-  const title = document.getElementById('f-title').value.trim(); if (!title) { document.getElementById('f-title').focus(); return; }
-  saving = true; const btn = document.getElementById('save-btn'); btn.disabled = true; btn.innerHTML = '<div class="spinner"></div> Guardando…';
-  let imageUrl = existingImageUrl, imagePosition = `${focusX}% ${focusY}%`;
-  try {
-    if (pendingImageFile) { if (existingImageUrl) await deleteImageFromUrl(existingImageUrl); imageUrl = await uploadImage(pendingImageFile); }
-    else if (removeExistingImage && existingImageUrl) { await deleteImageFromUrl(existingImageUrl); imageUrl = null; imagePosition = '50% 50%'; }
-  } catch(e) { saving = false; btn.disabled = false; btn.textContent = editingId ? 'Guardar cambios' : 'Guardar evento'; toast('Error al subir la imagen', true); return; }
-  const payload = {
-    title, date: document.getElementById('f-date').value, cat: document.getElementById('f-cat').value,
-    venue: document.getElementById('f-venue').value.trim(), city: document.getElementById('f-city').value.trim(),
-    address: document.getElementById('f-address').value.trim(), maps_url: document.getElementById('f-maps-url').value.trim(),
-    notes: document.getElementById('f-notes').value.trim(), companions: document.getElementById('f-companions').value.trim(),
-    rating: (() => { const r = parseFloat(document.getElementById('f-rating')?.value ?? formRating); return r > 0 ? r : null; })(),
-    price:  (() => { const p = parseFloat(document.getElementById('f-price')?.value); return !isNaN(p) && p > 0 ? p : null; })(),
-    image_url: imageUrl, image_position: imagePosition,
+  const options = {
+    keys: [
+      { name: 'title', weight: 3.0 },
+      { name: 'venue', weight: 1.5 },
+      { name: 'city', weight: 1.2 },
+      { name: 'cat', weight: 1.0 },
+      { name: 'notes', weight: 0.8 },
+      { name: 'companions', weight: 0.8 },
+      { name: 'date', weight: 0.5 },
+      { name: 'address', weight: 0.5 },
+    ],
+    threshold: 0.35,        // 0 = exacto, 1 = todo coincide
+    distance: 100,          // distancia máxima para fuzzy matching
+    includeScore: true,     // incluir puntuación de relevancia
+    ignoreLocation: true,   // buscar en todo el texto, no solo al inicio
+    useExtendedSearch: true, // operadores ^ = prefijo, ! = excluir, etc.
+    minMatchCharLength: 2,  // mínimo 2 caracteres para coincidir
+    shouldSort: true,
+    findAllMatches: false,
   };
-  if (editingId) {
-    const { data, error } = await db.from('events').update(payload).eq('id', editingId).select().single();
-    saving = false; btn.disabled = false; btn.textContent = '✓ Guardar evento';
-    if (error) { toast('Error al actualizar', true); return; }
-    events = events.map(e => e.id === editingId ? data : e); await idbUpsert(data);
-    if (formRating === 5) launchConfetti(); toast('✓ Evento actualizado');
-  } else {
-    const { data, error } = await db.from('events').insert([payload]).select().single();
-    saving = false; btn.disabled = false; btn.textContent = '✓ Guardar evento';
-    if (error) { toast('Error al guardar', true); return; }
-    events.unshift(data); await idbUpsert(data);
-    if (formRating === 5) launchConfetti(); toast('✓ Evento guardado');
+
+  // Normalizar datos para búsqueda (quitar tildes)
+  const normalizedEvents = events.map(ev => ({
+    ...ev,
+    _searchTitle: _normalizeText(ev.title || ''),
+    _searchVenue: _normalizeText(ev.venue || ''),
+    _searchCity: _normalizeText(ev.city || ''),
+    _searchNotes: _normalizeText(ev.notes || ''),
+    _searchCompanions: _normalizeText(ev.companions || ''),
+  }));
+
+  _fuseInstance = new Fuse(normalizedEvents, options);
+  _fuseIndex = _fuseInstance;
+  return _fuseInstance;
+}
+
+function _normalizeText(str) {
+  if (!str) return '';
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+function _rebuildFuseIndex() {
+  _fuseInstance = null;
+  _fuseIndex = null;
+  if (events.length > 0 && typeof Fuse !== 'undefined') {
+    _buildFuseIndex();
   }
-  closeForm(); render();
-}
-// ── MEJORA: Deshacer borrado ─────────────────────────────────────────────
-let _deleteTimer = null;
-let _pendingDelete = null; // { id, ev }
-
-async function deleteEvent(id) {
-  const ev = events.find(e => e.id === id);
-  if (!ev) return;
-
-  // Si ya hay un borrado pendiente de otro evento, confirmarlo inmediatamente
-  if (_pendingDelete && _pendingDelete.id !== id) await _commitDelete();
-
-  // Eliminar de la vista inmediatamente (optimistic)
-  _pendingDelete = { id, ev };
-  events = events.filter(e => e.id !== id);
-  render();
-  closeDetail();
-
-  // Mostrar toast con botón Deshacer durante 4 s
-  _showUndoToast(ev.title);
-
-  clearTimeout(_deleteTimer);
-  _deleteTimer = setTimeout(_commitDelete, 4000);
 }
 
-function _showUndoToast(title) {
-  const el = document.getElementById('toast');
-  el.innerHTML = `Eliminado <button onclick="undoDelete()" style="margin-left:10px;background:none;border:1px solid rgba(255,255,255,.35);border-radius:20px;padding:2px 10px;color:inherit;font-size:12px;cursor:pointer;font-family:var(--ui)">Deshacer</button>`;
-  el.className = 'show';
-  // No ponemos setTimeout aquí: se limpia en _commitDelete o undoDelete
-}
+// Wrapper de búsqueda que usa Fuse cuando está disponible
+function matchesSearch(ev, q) {
+  if (!q || !q.trim()) return true;
 
-async function _commitDelete() {
-  if (!_pendingDelete) return;
-  const { id, ev } = _pendingDelete;
-  _pendingDelete = null;
-  clearTimeout(_deleteTimer);
+  const query = q.trim();
 
-  // Limpiar toast
-  const el = document.getElementById('toast');
-  el.className = '';
-
-  if (ev.image_url) await deleteImageFromUrl(ev.image_url).catch(() => {});
-  const { error } = await db.from('events').delete().eq('id', id);
-  if (error) {
-    // Revertir si falla
-    events.push(ev);
-    events.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
-    render();
-    toast('Error al eliminar', true);
-    return;
+  // Para queries muy cortas (1-2 chars), búsqueda exacta rápida
+  if (query.length < 3) {
+    const ql = query.toLowerCase();
+    return ev.title?.toLowerCase().includes(ql) ||
+      ev.venue?.toLowerCase().includes(ql) ||
+      ev.city?.toLowerCase().includes(ql)  ||
+      ev.notes?.toLowerCase().includes(ql) ||
+      ev.companions?.toLowerCase().includes(ql) ||
+      ev.date?.slice(0,4).includes(ql) ||
+      ev.cat?.toLowerCase().includes(ql);
   }
-  await idbRemove(id);
+
+  // Si Fuse no está disponible, usar fallback fuzzy
+  if (!_fuseInstance && !_buildFuseIndex()) {
+    // Fallback: búsqueda difusa manual
+    const fields = [
+      { val: ev.title, weight: 3.0 },
+      { val: ev.venue, weight: 1.5 },
+      { val: ev.city, weight: 1.2 },
+      { val: ev.cat, weight: 1.0 },
+      { val: ev.notes, weight: 0.8 },
+      { val: ev.companions, weight: 0.8 },
+      { val: ev.date, weight: 0.5 },
+      { val: ev.address, weight: 0.5 },
+    ];
+
+    let totalScore = 0, totalWeight = 0;
+    const nq = _normalizeText(query);
+
+    for (const { val, weight } of fields) {
+      if (!val) continue;
+      const score = _fallbackFuzzyScore(_normalizeText(String(val)), nq);
+      totalScore += score * weight;
+      totalWeight += weight;
+    }
+
+    return totalWeight > 0 && (totalScore / totalWeight) >= 15;
+  }
+
+  // Buscar con Fuse
+  const results = _fuseInstance.search(_normalizeText(query));
+  return results.some(r => r.item.id === ev.id);
 }
 
-function undoDelete() {
-  if (!_pendingDelete) return;
-  const { ev } = _pendingDelete;
-  _pendingDelete = null;
-  clearTimeout(_deleteTimer);
+// Búsqueda con ranking (devuelve eventos ordenados por relevancia)
+function fuzzySearchEvents(query, opts = {}) {
+  if (!query || !query.trim()) return events.map(ev => ({ item: ev, score: 1 }));
 
-  // Restaurar evento en la lista
-  events.push(ev);
-  events.sort((a,b) => new Date(b.created_at||0) - new Date(a.created_at||0));
-  render();
+  if (query.length < 3) {
+    const ql = query.toLowerCase();
+    return events
+      .filter(ev => matchesSearch(ev, query))
+      .map(ev => ({ item: ev, score: 1 }));
+  }
 
-  const el = document.getElementById('toast');
-  el.className = '';
-  toast(`↩ "${ev.title}" restaurado`);
+  if (!_fuseInstance && !_buildFuseIndex()) {
+    // Fallback: ordenar por relevancia fuzzy manual
+    const nq = _normalizeText(query);
+    const scored = events.map(ev => {
+      const fields = [
+        { val: ev.title, weight: 3.0 },
+        { val: ev.venue, weight: 1.5 },
+        { val: ev.city, weight: 1.2 },
+        { val: ev.cat, weight: 1.0 },
+        { val: ev.notes, weight: 0.8 },
+        { val: ev.companions, weight: 0.8 },
+        { val: ev.date, weight: 0.5 },
+        { val: ev.address, weight: 0.5 },
+      ];
+      let totalScore = 0, totalWeight = 0;
+      for (const { val, weight } of fields) {
+        if (!val) continue;
+        const score = _fallbackFuzzyScore(_normalizeText(String(val)), nq);
+        totalScore += score * weight;
+        totalWeight += weight;
+      }
+      return { item: ev, score: totalWeight > 0 ? totalScore / totalWeight : 0 };
+    }).filter(r => r.score >= 15)
+      .sort((a, b) => b.score - a.score);
+    return scored;
+  }
+
+  const results = _fuseInstance.search(_normalizeText(query));
+  const threshold = opts.threshold || 0.5;
+
+  return results
+    .filter(r => r.score <= threshold)
+    .map(r => ({ item: r.item, score: 1 - r.score })); // invertir: mayor = mejor
+}
+
+// Reconstruir índice cuando cambian los eventos
+const _origLoadEvents = loadEvents;
+loadEvents = async function() {
+  await _origLoadEvents();
+  _rebuildFuseIndex();
+};
+
+// También reconstruir cuando se guarda o elimina
+const _origSaveEvent = saveEvent;
+saveEvent = async function() {
+  const _wasEditing = !!editingId;
+  const _eventBefore = events.length > 0 ? events[0].id : null;
+  await _origSaveEvent();
+  setTimeout(_rebuildFuseIndex, 100);
+  // Marcar evento como nuevo/actualizado para animación
+  if (!_wasEditing && events.length > 0 && events[0].id && events[0].id !== _eventBefore) {
+    markEventAsNew(events[0].id);
+  }
+};
+
+const _origDeleteEventCommit = _commitDelete;
+_commitDelete = async function() {
+  await _origDeleteEventCommit();
+  setTimeout(_rebuildFuseIndex, 100);
+};
+
+
+// ── ANIMACIÓN DE ENTRADA PARA EVENTOS NUEVOS ─────────────────────────────
+
+const _recentEventIds = new Set();
+const _RECENT_TIMEOUT = 30000;
+
+function markEventAsNew(id) {
+  _recentEventIds.add(id);
+  setTimeout(() => _recentEventIds.delete(id), _RECENT_TIMEOUT);
+}
+
+function markEventAsUpdated(id) {
+  _recentEventIds.add('updated-' + id);
+  setTimeout(() => _recentEventIds.delete('updated-' + id), _RECENT_TIMEOUT);
+}
+
+function isEventNew(id) {
+  return _recentEventIds.has(id);
+}
+
+function isEventUpdated(id) {
+  return _recentEventIds.has('updated-' + id);
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────
@@ -650,8 +498,12 @@ function renderGrid() {
     if (filterYear !== 'Todos') list = list.filter(e => e.date?.startsWith(filterYear));
     if (filterCompanion.length) list = list.filter(e => filterCompanion.some(c => getCompanions(e).includes(c)));
   }
-  // MEJORA: usa matchesSearch (incluye año y categoría)
-  if (searchQuery) list = list.filter(e => matchesSearch(e, searchQuery));
+  // MEJORA: búsqueda difusa con Fuse.js
+  if (searchQuery) {
+    const fuzzyResults = fuzzySearchEvents(searchQuery);
+    const matchedIds = new Set(fuzzyResults.map(r => r.item.id));
+    list = list.filter(e => matchedIds.has(e.id));
+  }
   list = sortedEvents(list);
 
   if (!list.length) {
@@ -678,7 +530,10 @@ function renderGrid() {
     const imgHtml = ev.image_url
       ? `<div class="card-image-wrap">${countdownHtml}<img src="${ev.image_url}" alt="${escHtml(ev.title)}" loading="lazy" style="object-position:${pos}" class="card-img-lazy" onload="this.classList.add('loaded')" onerror="this.style.display='none';this.parentElement.classList.add('card-img-placeholder');this.parentElement.style.setProperty('--cat-color','${cat.color}');if(!this.parentElement.querySelector('.card-img-emoji')){const s=document.createElement('span');s.className='card-img-emoji';s.textContent='${cat.emoji}';this.parentElement.appendChild(s);}"/></div>`
       : `<div class="card-image-wrap card-img-placeholder" style="--cat-color:${cat.color}">${countdownHtml}<span class="card-img-emoji">${cat.emoji}</span></div>`;
-    return `<div class="event-card" style="--cat-color:${cat.color}; animation-delay:${Math.min(i*.05,.3)}s" onclick="openDetail(${ev.id})">
+    const isNew = isEventNew(ev.id);
+    const isUpdated = isEventUpdated(ev.id);
+    const animClass = isNew ? 'is-new' : isUpdated ? 'is-updated' : '';
+    return `<div class="event-card ${animClass}" style="--cat-color:${cat.color}; animation-delay:${Math.min(i*.05,.3)}s" onclick="openDetail(${ev.id})">
       ${imgHtml}
       <div class="card-body">
         <div class="card-top">

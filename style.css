@@ -1500,3 +1500,147 @@ textarea {
     scrollbar-width: none;
   }
 }
+
+
+/* ════════════════════════════════════════
+   ANIMACIÓN DE ENTRADA PARA EVENTOS NUEVOS
+   ════════════════════════════════════════ */
+
+/* Evento recién añadido - glow ámbar sutil */
+.event-card.is-new {
+  animation: cardNewborn 0.6s cubic-bezier(.34,1.56,.64,1) both,
+             cardGlowPulse 2s ease-in-out 0.6s 2 both;
+  border-color: rgba(201, 148, 58, 0.4) !important;
+}
+
+/* Evento recién actualizado - pulso sutil sin glow fuerte */
+.event-card.is-updated {
+  animation: cardUpdated 0.5s ease both;
+}
+
+@keyframes cardNewborn {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) scale(0.92);
+    filter: blur(4px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.02);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+  }
+}
+
+@keyframes cardGlowPulse {
+  0%, 100% {
+    box-shadow: 0 4px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
+    border-color: rgba(201, 148, 58, 0.3);
+  }
+  50% {
+    box-shadow: 0 4px 24px rgba(201, 148, 58, 0.15), 0 0 40px rgba(201, 148, 58, 0.08), inset 0 1px 0 rgba(255,255,255,.05);
+    border-color: rgba(201, 148, 58, 0.5);
+  }
+}
+
+@keyframes cardUpdated {
+  0% {
+    background: rgba(201, 148, 58, 0.12);
+    border-color: rgba(201, 148, 58, 0.5);
+  }
+  100% {
+    background: rgba(16, 14, 20, 0.78);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Stagger delay para múltiples eventos nuevos */
+.event-card.is-new:nth-child(1) { animation-delay: 0s, 0.6s; }
+.event-card.is-new:nth-child(2) { animation-delay: 0.08s, 0.68s; }
+.event-card.is-new:nth-child(3) { animation-delay: 0.16s, 0.76s; }
+.event-card.is-new:nth-child(4) { animation-delay: 0.24s, 0.84s; }
+.event-card.is-new:nth-child(5) { animation-delay: 0.32s, 0.92s; }
+.event-card.is-new:nth-child(6) { animation-delay: 0.40s, 1.00s; }
+
+/* En vista lista, animación lateral */
+.events-grid.list-view .event-card.is-new {
+  animation-name: cardNewbornList, cardGlowPulse;
+}
+
+@keyframes cardNewbornList {
+  0% {
+    opacity: 0;
+    transform: translateX(-20px) scale(0.96);
+    filter: blur(2px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(4px) scale(1.01);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: blur(0px);
+  }
+}
+
+/* Badge "Nuevo" flotante */
+.event-card.is-new::after {
+  content: 'Nuevo';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(201, 148, 58, 0.9);
+  color: #1a1000;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 10px;
+  z-index: 10;
+  animation: badgeFadeOut 0.3s ease 4s both;
+  pointer-events: none;
+}
+
+@keyframes badgeFadeOut {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+
+/* Para eventos actualizados, badge diferente */
+.event-card.is-updated::after {
+  content: 'Actualizado';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(114, 184, 124, 0.85);
+  color: #0a0f0a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 10px;
+  z-index: 10;
+  animation: badgeFadeOut 0.3s ease 3s both;
+  pointer-events: none;
+}
+
+/* Reduce motion respet */
+@media (prefers-reduced-motion: reduce) {
+  .event-card.is-new,
+  .event-card.is-updated {
+    animation: none !important;
+    border-color: rgba(201, 148, 58, 0.3) !important;
+  }
+  .event-card.is-new::after,
+  .event-card.is-updated::after {
+    animation: none !important;
+    opacity: 0.7;
+  }
+}

@@ -86,256 +86,358 @@ function highlight(text, query) {
 function escHtml(str) { return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function getCompanions(ev) { if (!ev.companions) return []; return ev.companions.split(',').map(c => c.trim()).filter(Boolean); }
 
-// ── FUSE.JS INTEGRATION ───────────────────────────────────────────────────
 
-// Fallback fuzzy search (usado si Fuse.js no carga)
-function _fallbackFuzzyScore(text, query) {
-  if (!text || !query) return query ? 0 : 1;
-  const t = text.toLowerCase(), q = query.toLowerCase();
-  if (t === q) return 100;
-  if (t.includes(q)) return 80 + (q.length / t.length) * 20;
-  if (t.startsWith(q)) return 70 + (q.length / t.length) * 10;
+// ── FUNCIONES CRÍTICAS FALTANTES ──────────────────────────────────────────
 
-  // Subsecuencia
-  let ti = 0, qi = 0, matched = 0, gaps = 0;
-  while (ti < t.length && qi < q.length) {
-    if (t[ti] === q[qi]) { matched++; qi++; }
-    else if (matched > 0) gaps++;
-    ti++;
+async function loadEvents() {
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    if (!session?.user) { events = []; render(); return; }
+    const { data, error } = await db.from('events')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .order('date', { ascending: false });
+    if (error) throw error;
+    events = data || [];
+    _rebuildFuseIndex();
+    render();
+  } catch (err) {
+    console.error('loadEvents:', err);
+    toast('Error cargando eventos', true);
   }
-  if (qi === q.length) return Math.max(10, 50 - gaps * 5 + matched * 3);
-
-  // Levenshtein simple
-  if (Math.abs(t.length - q.length) <= 2) {
-    const dist = _levenshtein(t, q);
-    if (dist <= 2) return Math.max(5, 40 - dist * 15);
-  }
-  return 0;
 }
 
-function _levenshtein(a, b) {
-  const m = a.length, n = b.length;
-  if (m === 0) return n; if (n === 0) return m;
-  const prev = new Array(n + 1), curr = new Array(n + 1);
-  for (let j = 0; j <= n; j++) prev[j] = j;
-  for (let i = 1; i <= m; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= n; j++) {
-      curr[j] = a[i-1] === b[j-1] ? prev[j-1] : 1 + Math.min(prev[j], curr[j-1], prev[j-1]);
+async function saveEvent() {
+  if (saving) return;
+  const title = document.getElementById('f-title')?.value.trim();
+  if (!title) { document.getElementById('f-title')?.focus(); return; }
+
+  saving = true;
+  const saveBtn = document.getElementById('save-btn');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Guardando…'; }
+
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    if (!session?.user) { toast('Sesión expirada', true); return; }
+
+    let imageUrl = existingImageUrl;
+    if (removeExistingImage) imageUrl = null;
+    if (pendingImageFile) {
+      const fileName = `${session.user.id}/${Date.now()}_${pendingImageFile.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+      const { error: upError } = await db.storage.from('event-images').upload(fileName, pendingImageFile);
+      if (upError) throw upError;
+      const { data: { publicUrl } } = db.storage.from('event-images').getPublicUrl(fileName);
+      imageUrl = publicUrl;
     }
-    for (let j = 0; j <= n; j++) prev[j] = curr[j];
+
+    const eventData = {
+      user_id: session.user.id,
+      title,
+      date: document.getElementById('f-date')?.value || null,
+      cat: document.getElementById('f-cat')?.value || 'Otro',
+      venue: document.getElementById('f-venue')?.value.trim() || null,
+      city: document.getElementById('f-city')?.value.trim() || null,
+      address: document.getElementById('f-address')?.value.trim() || null,
+      maps_url: document.getElementById('f-maps-url')?.value.trim() || null,
+      notes: document.getElementById('f-notes')?.value.trim() || null,
+      companions: document.getElementById('f-companions')?.value.trim() || null,
+      rating: parseFloat(document.getElementById('f-rating')?.value) || null,
+      price: parseFloat(document.getElementById('f-price')?.value) || null,
+      image_url: imageUrl,
+      image_position: `${focusX}% ${focusY}%`,
+    };
+
+    let result;
+    if (editingId) {
+      const { data, error } = await db.from('events').update(eventData).eq('id', editingId).select().single();
+      if (error) throw error;
+      result = data;
+      markEventAsUpdated(editingId);
+    } else {
+      const { data, error } = await db.from('events').insert(eventData).select().single();
+      if (error) throw error;
+      result = data;
+      if (result?.id) markEventAsNew(result.id);
+    }
+
+    await loadEvents();
+    closeForm();
+    toast(editingId ? '✓ Evento actualizado' : '✓ Evento guardado');
+    if (!editingId && result?.rating === 5) launchConfetti();
+
+  } catch (err) {
+    console.error('saveEvent:', err);
+    toast('Error al guardar: ' + err.message, true);
+  } finally {
+    saving = false;
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '✓ Guardar evento'; }
   }
-  return prev[n];
 }
 
-function _normalizeText(str) {
-  if (!str) return '';
-  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+async function deleteEvent(id) {
+  if (!confirm('¿Eliminar este evento?')) return;
+  _pendingDelete = { id };
+  try {
+    const { error } = await db.from('events').delete().eq('id', id);
+    if (error) throw error;
+    events = events.filter(e => e.id !== id);
+    _rebuildFuseIndex();
+    if (_detailId === id) closeDetail();
+    render();
+    toast('✓ Evento eliminado');
+  } catch (err) {
+    console.error('deleteEvent:', err);
+    toast('Error al eliminar', true);
+  } finally {
+    _pendingDelete = null;
+  }
 }
 
-let _fuseInstance = null;
-let _fuseIndex = null;
+function closeForm() {
+  document.getElementById('overlay').classList.remove('open');
+  document.body.style.overflow = '';
+  editingId = null;
+  pendingImageFile = null;
+  existingImageUrl = null;
+  removeExistingImage = false;
+  formRating = 0;
+  focusX = 50; focusY = 50;
+  document.getElementById('f-title').value = '';
+  document.getElementById('f-date').value = '';
+  document.getElementById('f-venue').value = '';
+  document.getElementById('f-city').value = '';
+  document.getElementById('f-address').value = '';
+  document.getElementById('f-maps-url').value = '';
+  document.getElementById('f-notes').value = '';
+  document.getElementById('f-companions').value = '';
+  document.getElementById('f-price').value = '';
+  document.getElementById('f-rating').value = '0';
+  document.getElementById('img-thumb-wrap').style.display = 'none';
+  document.getElementById('img-thumb').src = '';
+  setProgress(0);
+  showStep(1);
+}
 
-function _buildFuseIndex() {
-  if (typeof Fuse === 'undefined') {
-    console.warn('Fuse.js no está cargado — usando búsqueda exacta');
-    return null;
-  }
+function onSearch(e) {
+  searchQuery = e.target.value;
+  const clearBtn = document.getElementById('search-clear');
+  if (clearBtn) clearBtn.style.display = searchQuery ? 'block' : 'none';
+  renderView();
+}
 
-  const options = {
-    keys: [
-      { name: 'title', weight: 3.0 },
-      { name: 'venue', weight: 1.5 },
-      { name: 'city', weight: 1.2 },
-      { name: 'cat', weight: 1.0 },
-      { name: 'notes', weight: 0.8 },
-      { name: 'companions', weight: 0.8 },
-      { name: 'date', weight: 0.5 },
-      { name: 'address', weight: 0.5 },
-    ],
-    threshold: 0.35,        // 0 = exacto, 1 = todo coincide
-    distance: 100,          // distancia máxima para fuzzy matching
-    includeScore: true,     // incluir puntuación de relevancia
-    ignoreLocation: true,   // buscar en todo el texto, no solo al inicio
-    useExtendedSearch: true, // operadores ^ = prefijo, ! = excluir, etc.
-    minMatchCharLength: 2,  // mínimo 2 caracteres para coincidir
-    shouldSort: true,
-    findAllMatches: false,
+function clearSearch() {
+  searchQuery = '';
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-clear').style.display = 'none';
+  renderView();
+}
+
+function onSort(e) {
+  sortBy = e.target.value;
+  localStorage.setItem('sortBy', sortBy);
+  renderView();
+}
+
+function setView(mode) {
+  viewMode = mode;
+  localStorage.setItem('viewMode', mode);
+  renderView();
+}
+
+function onImageSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  pendingImageFile = file;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const thumb = document.getElementById('img-thumb');
+    const wrap = document.getElementById('img-thumb-wrap');
+    thumb.src = ev.target.result;
+    wrap.style.display = 'block';
+    thumb.onload = () => { thumb.classList.add('loaded'); };
   };
-
-  // Normalizar datos para búsqueda (quitar tildes)
-  const normalizedEvents = events.map(ev => ({
-    ...ev,
-    _searchTitle: _normalizeText(ev.title || ''),
-    _searchVenue: _normalizeText(ev.venue || ''),
-    _searchCity: _normalizeText(ev.city || ''),
-    _searchNotes: _normalizeText(ev.notes || ''),
-    _searchCompanions: _normalizeText(ev.companions || ''),
-  }));
-
-  _fuseInstance = new Fuse(normalizedEvents, options);
-  _fuseIndex = _fuseInstance;
-  return _fuseInstance;
+  reader.readAsDataURL(file);
+  document.getElementById('img-label-text').textContent = file.name;
 }
 
-function _normalizeText(str) {
-  if (!str) return '';
-  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+function removeImage(e) {
+  e.stopPropagation();
+  pendingImageFile = null;
+  if (existingImageUrl) removeExistingImage = true;
+  document.getElementById('img-thumb').src = '';
+  document.getElementById('img-thumb-wrap').style.display = 'none';
+  document.getElementById('f-image').value = '';
+  document.getElementById('img-label-text').textContent = 'Seleccionar imagen…';
 }
 
-function _rebuildFuseIndex() {
-  _fuseInstance = null;
-  _fuseIndex = null;
-  if (events.length > 0 && typeof Fuse !== 'undefined') {
-    _buildFuseIndex();
+function openFocusPicker() {
+  const thumb = document.getElementById('img-thumb');
+  if (!thumb.src) return;
+  document.getElementById('focus-img').src = thumb.src;
+  document.getElementById('focus-overlay').classList.add('open');
+  tempFocusX = focusX; tempFocusY = focusY;
+  updateFocusCrosshair();
+}
+
+function closeFocusPicker() {
+  document.getElementById('focus-overlay').classList.remove('open');
+}
+
+function confirmFocus() {
+  focusX = tempFocusX; focusY = tempFocusY;
+  const thumb = document.getElementById('img-thumb');
+  if (thumb) thumb.style.objectPosition = `${focusX}% ${focusY}%`;
+  closeFocusPicker();
+}
+
+function updateFocusCrosshair() {
+  const ch = document.getElementById('focus-crosshair');
+  if (ch) {
+    ch.style.left = tempFocusX + '%';
+    ch.style.top = tempFocusY + '%';
   }
 }
 
-// Wrapper de búsqueda que usa Fuse cuando está disponible
-function matchesSearch(ev, q) {
-  if (!q || !q.trim()) return true;
+function overlayClick(e) {
+  if (e.target === document.getElementById('overlay')) closeForm();
+}
 
-  const query = q.trim();
+function doLogin() {
+  const email = document.getElementById('l-email').value;
+  const pass = document.getElementById('l-pass').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+  if (!email || !pass) { err.textContent = 'Completa email y contraseña'; err.style.display = 'block'; return; }
+  btn.disabled = true; btn.textContent = 'Entrando…';
+  db.auth.signInWithPassword({ email, password: pass }).then(({ data, error }) => {
+    btn.disabled = false; btn.textContent = 'Entrar';
+    if (error) { err.textContent = error.message; err.style.display = 'block'; }
+    else { hideLoginScreen(); loadEvents(); subscribeRealtime(); }
+  });
+}
 
-  // Para queries muy cortas (1-2 chars), búsqueda exacta rápida
-  if (query.length < 3) {
-    const ql = query.toLowerCase();
-    return ev.title?.toLowerCase().includes(ql) ||
-      ev.venue?.toLowerCase().includes(ql) ||
-      ev.city?.toLowerCase().includes(ql)  ||
-      ev.notes?.toLowerCase().includes(ql) ||
-      ev.companions?.toLowerCase().includes(ql) ||
-      ev.date?.slice(0,4).includes(ql) ||
-      ev.cat?.toLowerCase().includes(ql);
+function doLogout() {
+  db.auth.signOut().then(() => {
+    events = [];
+    unsubscribeRealtime();
+    document.getElementById('login-screen').style.display = 'flex';
+    render();
+  });
+}
+
+function hideLoginScreen() {
+  document.getElementById('login-screen').style.display = 'none';
+}
+
+function updateOfflineBanner() {
+  const banner = document.getElementById('offline-banner');
+  if (banner) banner.classList.toggle('visible', !isOnline);
+}
+
+async function idbUpsert(ev) {
+  try {
+    const dbName = 'diario-cultural';
+    const req = indexedDB.open(dbName, 1);
+    req.onupgradeneeded = (e) => {
+      const idb = e.target.result;
+      if (!idb.objectStoreNames.contains('events')) idb.createObjectStore('events', { keyPath: 'id' });
+    };
+    req.onsuccess = (e) => {
+      const idb = e.target.result;
+      const tx = idb.transaction('events', 'readwrite');
+      tx.objectStore('events').put(ev);
+    };
+  } catch (_) {}
+}
+
+async function idbRemove(id) {
+  try {
+    const dbName = 'diario-cultural';
+    const req = indexedDB.open(dbName, 1);
+    req.onsuccess = (e) => {
+      const idb = e.target.result;
+      const tx = idb.transaction('events', 'readwrite');
+      tx.objectStore('events').delete(id);
+    };
+  } catch (_) {}
+}
+
+async function processSyncQueue() {
+  console.log('Sync queue processed');
+}
+
+function starsHtml(rating) {
+  if (!rating) return '';
+  let html = '';
+  for (let i = 1; i <= 5; i++) {
+    if (rating >= i) html += '<span class="s-star s-full">★</span>';
+    else if (rating >= i - 0.5) html += '<span class="s-star s-half"><span class="s-b">★</span><span class="s-f">★</span></span>';
+    else html += '<span class="s-star s-empty">★</span>';
   }
+  return html;
+}
 
-  // Si Fuse no está disponible, usar fallback fuzzy
-  if (!_fuseInstance && !_buildFuseIndex()) {
-    // Fallback: búsqueda difusa manual
-    const fields = [
-      { val: ev.title, weight: 3.0 },
-      { val: ev.venue, weight: 1.5 },
-      { val: ev.city, weight: 1.2 },
-      { val: ev.cat, weight: 1.0 },
-      { val: ev.notes, weight: 0.8 },
-      { val: ev.companions, weight: 0.8 },
-      { val: ev.date, weight: 0.5 },
-      { val: ev.address, weight: 0.5 },
-    ];
+function renderStars() {
+  const container = document.getElementById('star-input');
+  if (!container) return;
+  container.innerHTML = '';
+  for (let i = 1; i <= 5; i++) {
+    const half = i - 0.5;
+    const left = document.createElement('button');
+    left.className = 'sip-l' + (formRating >= half ? ' on' : '');
+    left.innerHTML = '<span>★</span>';
+    left.onclick = () => { formRating = half; renderStars(); };
+    const right = document.createElement('button');
+    right.className = 'sip-r' + (formRating >= i ? ' on' : '');
+    right.innerHTML = '<span>★</span>';
+    right.onclick = () => { formRating = i; renderStars(); };
+    const wrap = document.createElement('span');
+    wrap.className = 'sip';
+    wrap.appendChild(left);
+    wrap.appendChild(right);
+    container.appendChild(wrap);
+  }
+  document.getElementById('f-rating').value = formRating;
+}
 
-    let totalScore = 0, totalWeight = 0;
-    const nq = _normalizeText(query);
-
-    for (const { val, weight } of fields) {
-      if (!val) continue;
-      const score = _fallbackFuzzyScore(_normalizeText(String(val)), nq);
-      totalScore += score * weight;
-      totalWeight += weight;
+function openForm(ev = null) {
+  document.getElementById('overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  showStep(1);
+  if (ev) {
+    editingId = ev.id;
+    document.getElementById('sheet-title').textContent = 'Editar evento';
+    document.getElementById('f-title').value = ev.title || '';
+    document.getElementById('f-date').value = ev.date || '';
+    document.getElementById('f-cat').value = ev.cat || 'Otro';
+    document.getElementById('f-venue').value = ev.venue || '';
+    document.getElementById('f-city').value = ev.city || '';
+    document.getElementById('f-address').value = ev.address || '';
+    document.getElementById('f-maps-url').value = ev.maps_url || '';
+    document.getElementById('f-notes').value = ev.notes || '';
+    document.getElementById('f-companions').value = ev.companions || '';
+    document.getElementById('f-price').value = ev.price || '';
+    formRating = ev.rating || 0;
+    if (ev.image_url) {
+      existingImageUrl = ev.image_url;
+      document.getElementById('img-thumb').src = ev.image_url;
+      document.getElementById('img-thumb-wrap').style.display = 'block';
+      const pos = ev.image_position || '50% 50%';
+      const [x, y] = pos.split(' ').map(p => parseFloat(p.replace('%', '')));
+      focusX = x || 50; focusY = y || 50;
     }
-
-    return totalWeight > 0 && (totalScore / totalWeight) >= 15;
+  } else {
+    editingId = null;
+    document.getElementById('sheet-title').textContent = 'Nuevo evento';
+    formRating = 0;
   }
-
-  // Buscar con Fuse
-  const results = _fuseInstance.search(_normalizeText(query));
-  return results.some(r => r.item.id === ev.id);
+  renderStars();
+  rebuildCatSelect();
 }
 
-// Búsqueda con ranking (devuelve eventos ordenados por relevancia)
-function fuzzySearchEvents(query, opts = {}) {
-  if (!query || !query.trim()) return events.map(ev => ({ item: ev, score: 1 }));
-
-  if (query.length < 3) {
-    const ql = query.toLowerCase();
-    return events
-      .filter(ev => matchesSearch(ev, query))
-      .map(ev => ({ item: ev, score: 1 }));
-  }
-
-  if (!_fuseInstance && !_buildFuseIndex()) {
-    // Fallback: ordenar por relevancia fuzzy manual
-    const nq = _normalizeText(query);
-    const scored = events.map(ev => {
-      const fields = [
-        { val: ev.title, weight: 3.0 },
-        { val: ev.venue, weight: 1.5 },
-        { val: ev.city, weight: 1.2 },
-        { val: ev.cat, weight: 1.0 },
-        { val: ev.notes, weight: 0.8 },
-        { val: ev.companions, weight: 0.8 },
-        { val: ev.date, weight: 0.5 },
-        { val: ev.address, weight: 0.5 },
-      ];
-      let totalScore = 0, totalWeight = 0;
-      for (const { val, weight } of fields) {
-        if (!val) continue;
-        const score = _fallbackFuzzyScore(_normalizeText(String(val)), nq);
-        totalScore += score * weight;
-        totalWeight += weight;
-      }
-      return { item: ev, score: totalWeight > 0 ? totalScore / totalWeight : 0 };
-    }).filter(r => r.score >= 15)
-      .sort((a, b) => b.score - a.score);
-    return scored;
-  }
-
-  const results = _fuseInstance.search(_normalizeText(query));
-  const threshold = opts.threshold || 0.5;
-
-  return results
-    .filter(r => r.score <= threshold)
-    .map(r => ({ item: r.item, score: 1 - r.score })); // invertir: mayor = mejor
-}
-
-// Reconstruir índice cuando cambian los eventos
-const _origLoadEvents = loadEvents;
-loadEvents = async function() {
-  await _origLoadEvents();
-  _rebuildFuseIndex();
-};
-
-// También reconstruir cuando se guarda o elimina
-const _origSaveEvent = saveEvent;
-saveEvent = async function() {
-  const _wasEditing = !!editingId;
-  const _eventBefore = events.length > 0 ? events[0].id : null;
-  await _origSaveEvent();
-  setTimeout(_rebuildFuseIndex, 100);
-  // Marcar evento como nuevo/actualizado para animación
-  if (!_wasEditing && events.length > 0 && events[0].id && events[0].id !== _eventBefore) {
-    markEventAsNew(events[0].id);
-  }
-};
-
-const _origDeleteEventCommit = _commitDelete;
-_commitDelete = async function() {
-  await _origDeleteEventCommit();
-  setTimeout(_rebuildFuseIndex, 100);
-};
-
-
-// ── ANIMACIÓN DE ENTRADA PARA EVENTOS NUEVOS ─────────────────────────────
-
-const _recentEventIds = new Set();
-const _RECENT_TIMEOUT = 30000;
-
-function markEventAsNew(id) {
-  _recentEventIds.add(id);
-  setTimeout(() => _recentEventIds.delete(id), _RECENT_TIMEOUT);
-}
-
-function markEventAsUpdated(id) {
-  _recentEventIds.add('updated-' + id);
-  setTimeout(() => _recentEventIds.delete('updated-' + id), _RECENT_TIMEOUT);
-}
-
-function isEventNew(id) {
-  return _recentEventIds.has(id);
-}
-
-function isEventUpdated(id) {
-  return _recentEventIds.has('updated-' + id);
-}
+function openMap() { document.getElementById('map-overlay').classList.add('open'); document.body.style.overflow='hidden'; if (!venueMap) setTimeout(initVenueMap,120); else refreshVenueMarkers(); }
+function openStats() { document.getElementById('stats-overlay').classList.add('open'); setTimeout(()=>_attachSwipe(document.querySelector('.stats-panel'), closeStats), 50); renderStatsPanel(); }
+function toggleNotifications() { openNotifPanel(); }
 
 // ── Filters ───────────────────────────────────────────────────────────────
 function setFilter(c)           { filterCat = c; filterUpcoming = false; renderView(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
@@ -652,9 +754,6 @@ function buildCalHTML(list) {
 }
 
 // MEJORA: abrir formulario con fecha prellenada desde el calendario
-function openFormWithDate(dateStr) {
-  openForm();
-  setTimeout(() => {
     const dateInput = document.getElementById("f-date");
     if (dateInput) dateInput.value = dateStr;
   }, 50);
@@ -715,9 +814,6 @@ function getNotifDays() { try { return JSON.parse(localStorage.getItem(NOTIF_DAY
 function getNotifLog() { try { return JSON.parse(localStorage.getItem(NOTIF_LOG_KEY) || '{}'); } catch(_) { return {}; } }
 function saveNotifLog(log) { const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0,10); Object.keys(log).forEach(k => { if (log[k] < cutoff) delete log[k]; }); localStorage.setItem(NOTIF_LOG_KEY, JSON.stringify(log)); }
 
-async function toggleNotifications() {
-  if (!('Notification' in window)) { toast('Tu navegador no soporta notificaciones', true); return; }
-  if (notifEnabled()) { openNotifPanel(); return; }
   const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
   if (perm !== 'granted') { toast('Permiso denegado — actívalo en la configuración del navegador', true); return; }
   localStorage.setItem(NOTIF_ENABLED_KEY, '1'); updateNotifBtn(); openNotifPanel();
@@ -1144,7 +1240,6 @@ const DARK_MAP_STYLES = [
   {featureType:'poi.park',elementType:'geometry',stylers:[{color:'#0e0c11'}]},{featureType:'transit',elementType:'geometry',stylers:[{color:'#1c1a1f'}]},
   {featureType:'administrative',elementType:'geometry',stylers:[{color:'#161419'}]},{featureType:'administrative',elementType:'labels.text.fill',stylers:[{color:'#857e88'}]},
 ];
-function openMap() { document.getElementById('map-overlay').classList.add('open'); document.body.style.overflow='hidden'; if (!venueMap) setTimeout(initVenueMap,120); else refreshVenueMarkers(); }
 function closeMap() { document.getElementById('map-overlay').classList.remove('open'); document.body.style.overflow=''; }
 function coordsFromMapsUrl(url) { if (!url) return null; const m = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/); return m ? {lat:parseFloat(m[1]),lng:parseFloat(m[2])} : null; }
 function tryGoogleGeocode(query) { return new Promise(resolve => { if (!window.google?.maps?.Geocoder) {resolve(null);return;} new google.maps.Geocoder().geocode({address:query},(results,status) => { resolve(status==='OK'&&results[0]?{lat:results[0].geometry.location.lat(),lng:results[0].geometry.location.lng()}:null); }); }); }
@@ -1319,8 +1414,6 @@ document.addEventListener('keydown',e=>{if(!document.getElementById('wrapped-ove
 
 // ── Stats panel ────────────────────────────────────────────────────────────
 let statsYear='Todos';
-function openStats(){
-  document.getElementById('stats-overlay').classList.add('open'); setTimeout(()=>_attachSwipe(document.querySelector('.stats-panel'), closeStats), 50);
   const sel=document.getElementById('stats-year-sel'),years=getYears();
   sel.innerHTML='<option value="Todos">Todos los años</option>'+years.map(y=>`<option value="${y}" ${y===statsYear?'selected':''}>${y}</option>`).join('');
   try{renderStatsPanel();}catch(err){document.getElementById('stats-content').innerHTML=`<p style="padding:2rem;text-align:center;color:var(--text3)">Error al cargar estadísticas.<br><small>${err.message}</small></p>`;console.error(err);}

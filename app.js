@@ -41,6 +41,57 @@ function rebuildCatSelect(keepVal) {
   sel.innerHTML = Object.entries(CATS).map(([n, c]) => `<option value="${n}"${n === val ? ' selected' : ''}>${c.emoji} ${n}</option>`).join('');
 }
 
+// ── Variables de estado global ─────────────────────────────────────────────
+let _pendingDelete = null;
+
+// ── Animaciones de tarjetas nuevas/actualizadas ───────────────────────────
+const _newEventIds     = new Set();
+const _updatedEventIds = new Set();
+function markEventAsNew(id)     { _newEventIds.add(id);     setTimeout(() => _newEventIds.delete(id),     5000); }
+function markEventAsUpdated(id) { _updatedEventIds.add(id); setTimeout(() => _updatedEventIds.delete(id), 4000); }
+function isEventNew(id)         { return _newEventIds.has(id); }
+function isEventUpdated(id)     { return _updatedEventIds.has(id); }
+
+// ── Ordenar eventos ───────────────────────────────────────────────────────
+function sortedEvents(list) {
+  const copy = [...list];
+  if (sortBy === 'newest')  return copy.sort((a, b) => (b.date || '') < (a.date || '') ? -1 : 1);
+  if (sortBy === 'oldest')  return copy.sort((a, b) => (a.date || '') < (b.date || '') ? -1 : 1);
+  if (sortBy === 'rating')  return copy.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  if (sortBy === 'title')   return copy.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'es'));
+  // 'recent' → orden de inserción (id descendente)
+  return copy.sort((a, b) => b.id - a.id);
+}
+
+// ── Búsqueda difusa con Fuse.js ───────────────────────────────────────────
+let _fuseIndex = null;
+function _rebuildFuseIndex() {
+  if (typeof Fuse === 'undefined') return;
+  _fuseIndex = new Fuse(events, {
+    keys: [
+      { name: 'title',      weight: 0.5 },
+      { name: 'venue',      weight: 0.2 },
+      { name: 'city',       weight: 0.15 },
+      { name: 'notes',      weight: 0.1 },
+      { name: 'companions', weight: 0.05 },
+    ],
+    threshold: 0.35,
+    includeScore: true,
+    ignoreLocation: true,
+    minMatchCharLength: 2,
+  });
+}
+function fuzzySearchEvents(query) {
+  if (!_fuseIndex || !query) return events.map(e => ({ item: e }));
+  return _fuseIndex.search(query);
+}
+// Búsqueda simple para el calendario (sin Fuse, sólo texto)
+function matchesSearch(ev, query) {
+  const q = query.toLowerCase();
+  return [ev.title, ev.venue, ev.city, ev.notes, ev.companions]
+    .some(f => f && f.toLowerCase().includes(q));
+}
+
 let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'newest';
 let filterUpcoming = false, hideUpcoming = false;
 let searchQuery = '', formRating = 0, hoverRating = 0, saving = false, editingId = null;
@@ -754,6 +805,9 @@ function buildCalHTML(list) {
 }
 
 // MEJORA: abrir formulario con fecha prellenada desde el calendario
+function openFormWithDate(dateStr) {
+  openForm();
+  setTimeout(() => {
     const dateInput = document.getElementById("f-date");
     if (dateInput) dateInput.value = dateStr;
   }, 50);
@@ -814,6 +868,7 @@ function getNotifDays() { try { return JSON.parse(localStorage.getItem(NOTIF_DAY
 function getNotifLog() { try { return JSON.parse(localStorage.getItem(NOTIF_LOG_KEY) || '{}'); } catch(_) { return {}; } }
 function saveNotifLog(log) { const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0,10); Object.keys(log).forEach(k => { if (log[k] < cutoff) delete log[k]; }); localStorage.setItem(NOTIF_LOG_KEY, JSON.stringify(log)); }
 
+async function enableNotifications() {
   const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
   if (perm !== 'granted') { toast('Permiso denegado — actívalo en la configuración del navegador', true); return; }
   localStorage.setItem(NOTIF_ENABLED_KEY, '1'); updateNotifBtn(); openNotifPanel();
@@ -1022,7 +1077,7 @@ function openDetail(id) {
   _attachSwipe(document.getElementById('detail-panel'), closeDetail);
 }
 
-function _renderDetailPanel(ev) {
+let _renderDetailPanel = function(ev) {
   const cat = CATS[ev.cat] || CATS['Otro'];
   const loc = [ev.venue, ev.city].filter(Boolean).join(' · ');
 
@@ -1414,6 +1469,9 @@ document.addEventListener('keydown',e=>{if(!document.getElementById('wrapped-ove
 
 // ── Stats panel ────────────────────────────────────────────────────────────
 let statsYear='Todos';
+function openStats(){
+  document.getElementById('stats-overlay').classList.add('open');
+  setTimeout(()=>_attachSwipe(document.querySelector('.stats-panel'), closeStats), 50);
   const sel=document.getElementById('stats-year-sel'),years=getYears();
   sel.innerHTML='<option value="Todos">Todos los años</option>'+years.map(y=>`<option value="${y}" ${y===statsYear?'selected':''}>${y}</option>`).join('');
   try{renderStatsPanel();}catch(err){document.getElementById('stats-content').innerHTML=`<p style="padding:2rem;text-align:center;color:var(--text3)">Error al cargar estadísticas.<br><small>${err.message}</small></p>`;console.error(err);}

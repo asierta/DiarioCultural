@@ -146,7 +146,6 @@ async function loadEvents() {
     if (!session?.user) { events = []; render(); return; }
     const { data, error } = await db.from('events')
       .select('*')
-      .eq('user_id', session.user.id)
       .order('date', { ascending: false });
     if (error) throw error;
     events = data || [];

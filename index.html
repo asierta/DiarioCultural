@@ -126,7 +126,12 @@
     <div class="form-step" id="step-2">
       <div class="form-group">
         <label>Lugar / Sala</label>
-        <input type="text" id="f-venue" placeholder="Busca un teatro, cine, sala…" autocomplete="off"/>
+        <div class="venue-wrap">
+          <input type="text" id="f-venue" placeholder="Busca un teatro, cine, sala…" autocomplete="off"
+            oninput="onVenueInput(event)"
+            onkeydown="onVenueKey(event)"/>
+          <div class="companions-suggestions" id="venue-suggestions"></div>
+        </div>
       </div>
       <div class="form-group">
         <label>Ciudad</label>

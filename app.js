@@ -158,7 +158,6 @@ async function saveEvent() {
     }
 
     const eventData = {
-      user_id: session.user.id,
       title,
       date: document.getElementById('f-date')?.value || null,
       cat: document.getElementById('f-cat')?.value || 'Otro',
@@ -601,10 +600,98 @@ function pickCompanion(name) {
   if (box) { box.innerHTML = ''; box.classList.remove('open'); }
 }
 
+// ── Autocompletar venue ───────────────────────────────────────────────────
+function getAllVenues() {
+  // Devuelve venues únicos ordenados por frecuencia, con su ciudad asociada
+  const map = {};
+  events.forEach(e => {
+    if (!e.venue) return;
+    const key = e.venue;
+    if (!map[key]) map[key] = { venue: e.venue, city: e.city || '', address: e.address || '', maps_url: e.maps_url || '', count: 0 };
+    map[key].count++;
+    // Actualizar ciudad/dirección si no las teníamos
+    if (!map[key].city && e.city)       map[key].city    = e.city;
+    if (!map[key].address && e.address) map[key].address = e.address;
+    if (!map[key].maps_url && e.maps_url) map[key].maps_url = e.maps_url;
+  });
+  return Object.values(map).sort((a, b) => b.count - a.count);
+}
+
+function onVenueInput(e) {
+  const input = e.target;
+  const val   = input.value.trim().toLowerCase();
+  const box   = document.getElementById('venue-suggestions');
+  if (!box) return;
+
+  if (!val) { box.innerHTML = ''; box.classList.remove('open'); return; }
+
+  const matches = getAllVenues()
+    .filter(v => v.venue.toLowerCase().includes(val))
+    .slice(0, 6);
+
+  if (!matches.length) { box.innerHTML = ''; box.classList.remove('open'); return; }
+
+  box.innerHTML = matches.map(v => {
+    const safe = v.venue.replace(/'/g, "\\'");
+    const safeCity = v.city.replace(/'/g, "\\'");
+    const safeAddr = v.address.replace(/'/g, "\\'");
+    const safeMaps = v.maps_url.replace(/'/g, "\\'");
+    const sub = [v.city, v.count > 1 ? `${v.count} visitas` : '1 visita'].filter(Boolean).join(' · ');
+    return `<div class="comp-suggestion venue-suggestion" onmousedown="pickVenue('${safe}','${safeCity}','${safeAddr}','${safeMaps}')">
+      <span class="venue-sug-name">${escHtml(v.venue)}</span>
+      <span class="venue-sug-sub">${escHtml(sub)}</span>
+    </div>`;
+  }).join('');
+  box.classList.add('open');
+}
+
+function onVenueKey(e) {
+  const box = document.getElementById('venue-suggestions');
+  if (!box?.classList.contains('open')) return;
+  const items  = box.querySelectorAll('.venue-suggestion');
+  const active = box.querySelector('.venue-suggestion.active');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    const next = active ? active.nextElementSibling : items[0];
+    active?.classList.remove('active'); next?.classList.add('active');
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    const prev = active ? active.previousElementSibling : items[items.length - 1];
+    active?.classList.remove('active'); prev?.classList.add('active');
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    if (active) {
+      e.preventDefault();
+      const [venue, city, addr, maps] = ['data-venue','data-city','data-addr','data-maps'].map(a => active.getAttribute(a) || '');
+      // Fallback: leer del onmousedown si no hay data attrs
+      active.dispatchEvent(new MouseEvent('mousedown'));
+    }
+  } else if (e.key === 'Escape') {
+    box.innerHTML = ''; box.classList.remove('open');
+  }
+}
+
+function pickVenue(venue, city, address, mapsUrl) {
+  const fVenue = document.getElementById('f-venue');
+  const fCity  = document.getElementById('f-city');
+  const fAddr  = document.getElementById('f-address');
+  const fMaps  = document.getElementById('f-maps-url');
+  if (fVenue) fVenue.value = venue;
+  if (fCity  && city)    fCity.value    = city;
+  if (fAddr  && address) fAddr.value    = address;
+  if (fMaps  && mapsUrl) fMaps.value    = mapsUrl;
+  const box = document.getElementById('venue-suggestions');
+  if (box) { box.innerHTML = ''; box.classList.remove('open'); }
+  setTimeout(() => fVenue?.focus(), 10);
+}
+
 // Cerrar sugerencias al hacer clic fuera
 document.addEventListener('click', e => {
   if (!e.target.closest('.companions-wrap')) {
     const box = document.getElementById('companions-suggestions');
+    if (box) { box.innerHTML = ''; box.classList.remove('open'); }
+  }
+  if (!e.target.closest('.venue-wrap')) {
+    const box = document.getElementById('venue-suggestions');
     if (box) { box.innerHTML = ''; box.classList.remove('open'); }
   }
 });

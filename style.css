@@ -878,6 +878,7 @@ main { padding:1.25rem;max-width:900px;margin:0 auto;position:relative; }
 
 /* ── Autocompletar compañeros ── */
 .companions-wrap { position: relative; }
+.venue-wrap { position: relative; }
 .companions-suggestions {
   display: none;
   position: absolute;
@@ -906,6 +907,15 @@ main { padding:1.25rem;max-width:900px;margin:0 auto;position:relative; }
 .comp-suggestion:hover,
 .comp-suggestion.active { background: rgba(201,148,58,.1); color: var(--amber-lt); }
 .comp-suggestion + .comp-suggestion { border-top: 1px solid var(--border); }
+
+/* Sugerencia de venue: dos líneas (nombre + ciudad/visitas) */
+.venue-suggestion { display: flex; flex-direction: column; gap: 2px; padding: 9px 14px; }
+.venue-sug-name { font-size: 14px; color: var(--text); font-family: var(--ui); }
+.venue-sug-sub  { font-size: 11px; color: var(--text3); font-family: var(--ui); }
+.venue-suggestion:hover .venue-sug-name,
+.venue-suggestion.active .venue-sug-name { color: var(--amber-lt); }
+.venue-suggestion:hover .venue-sug-sub,
+.venue-suggestion.active .venue-sug-sub  { color: var(--amber); opacity: .7; }
 
 /* ── Récords ── */
 .records-grid {

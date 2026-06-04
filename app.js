@@ -18,7 +18,7 @@ function getCustomCats() { try { return JSON.parse(localStorage.getItem('dc-cust
 async function saveCustomCatsToDB(list) {
   const { data: { session } } = await db.auth.getSession();
   if (!session?.user) return;
-  const { error } = await db.from('user_settings').upsert({ user_id: session.user.id, custom_cats: list, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  const { error } = await db.from('user_settings').upsert({ custom_cats: list, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
   if (error) { console.error('saveCustomCatsToDB:', error); toast('Error al sincronizar categorías (' + error.message + ')', true); }
 }
 async function loadCustomCatsFromDB() {
@@ -337,7 +337,7 @@ function doLogin() {
   db.auth.signInWithPassword({ email, password: pass }).then(({ data, error }) => {
     btn.disabled = false; btn.textContent = 'Entrar';
     if (error) { err.textContent = error.message; err.style.display = 'block'; }
-    else { hideLoginScreen(); loadEvents(); subscribeRealtime(); }
+    else { hideLoginScreen(); loadCustomCatsFromDB(); loadEvents(); subscribeRealtime(); }
   });
 }
 
@@ -1906,6 +1906,7 @@ db.auth.getSession().then(({data:{session}})=>{
   if(session) {
     hideLoginScreen();
     subscribeRealtime();
+    loadCustomCatsFromDB();
   }
   rotateLoginQuote();
 });

@@ -63,29 +63,7 @@ function sortedEvents(list) {
   return copy.sort((a, b) => b.id - a.id);
 }
 
-// ── Búsqueda difusa con Fuse.js ───────────────────────────────────────────
-let _fuseIndex = null;
-function _rebuildFuseIndex() {
-  if (typeof Fuse === 'undefined') return;
-  _fuseIndex = new Fuse(events, {
-    keys: [
-      { name: 'title',      weight: 0.5 },
-      { name: 'venue',      weight: 0.2 },
-      { name: 'city',       weight: 0.15 },
-      { name: 'notes',      weight: 0.1 },
-      { name: 'companions', weight: 0.05 },
-    ],
-    threshold: 0.35,
-    includeScore: true,
-    ignoreLocation: true,
-    minMatchCharLength: 2,
-  });
-}
-function fuzzySearchEvents(query) {
-  if (!_fuseIndex || !query) return events.map(e => ({ item: e }));
-  return _fuseIndex.search(query);
-}
-// Búsqueda simple para el calendario (sin Fuse, sólo texto)
+// ── Búsqueda simple ──────────────────────────────────────────────────────
 function matchesSearch(ev, query) {
   const q = query.toLowerCase();
   return [ev.title, ev.venue, ev.city, ev.notes, ev.companions]
@@ -149,7 +127,6 @@ async function loadEvents() {
       .order('date', { ascending: false });
     if (error) throw error;
     events = data || [];
-    _rebuildFuseIndex();
     render();
   } catch (err) {
     console.error('loadEvents:', err);
@@ -231,7 +208,6 @@ async function deleteEvent(id) {
     const { error } = await db.from('events').delete().eq('id', id);
     if (error) throw error;
     events = events.filter(e => e.id !== id);
-    _rebuildFuseIndex();
     if (_detailId === id) closeDetail();
     render();
     toast('✓ Evento eliminado');
@@ -650,11 +626,8 @@ function renderGrid() {
     if (filterYear !== 'Todos') list = list.filter(e => e.date?.startsWith(filterYear));
     if (filterCompanion.length) list = list.filter(e => filterCompanion.some(c => getCompanions(e).includes(c)));
   }
-  // MEJORA: búsqueda difusa con Fuse.js
   if (searchQuery) {
-    const fuzzyResults = fuzzySearchEvents(searchQuery);
-    const matchedIds = new Set(fuzzyResults.map(r => r.item.id));
-    list = list.filter(e => matchedIds.has(e.id));
+    list = list.filter(e => matchesSearch(e, searchQuery));
   }
   list = sortedEvents(list);
 

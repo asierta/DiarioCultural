@@ -815,6 +815,7 @@ function renderGrid() {
       <div class="card-body">
         <div class="card-top">
           <span class="cat-label">${cat.emoji}</span>
+          ${ev.series ? `<span class="series-chip series-chip-card" onclick="event.stopPropagation();setSeriesFilter('${ev.series.replace(/'/g,"\\'")}')">🔗 ${escHtml(ev.series)}</span>` : ''}
           <div class="card-actions">
             <button class="card-btn" onclick='event.stopPropagation();openForm(${JSON.stringify(ev).replace(/'/g,"&#39;")})' title="Editar"><span class="btn-icon">✏️</span><span class="btn-lbl">Editar</span></button>
             <button class="card-btn" onclick="event.stopPropagation();duplicateEvent(${ev.id})" title="Duplicar"><span class="btn-icon">📋</span><span class="btn-lbl">Copiar</span></button>
@@ -826,7 +827,6 @@ function renderGrid() {
         ${loc ? `<div class="card-meta">${ev.maps_url ? `<a href="${ev.maps_url}" target="_blank" rel="noopener" class="card-pin-link" onclick="event.stopPropagation()">📍</a>` : '📍'} ${highlight(loc, searchQuery)}</div>` : ''}
         ${ev.date ? `<div class="card-meta">📅 ${fmtDate(ev.date)}</div>` : ''}
         ${stars ? `<div class="card-stars stars-row">${stars}</div>` : ''}
-        ${ev.series ? `<div class="card-series"><span class="series-chip" onclick="event.stopPropagation();setSeriesFilter('${ev.series.replace(/'/g,"\\'")}')">🔗 ${escHtml(ev.series)}</span></div>` : ''}
         ${ev.companions ? `<div class="card-companions">${getCompanions(ev).map(c=>`<span class="companion-tag${filterCompanion.includes(c)?' companion-active':''}" onclick="event.stopPropagation();setCompanionFilter('${c.replace(/'/g, "\\'")}')\">${escHtml(c)}</span>`).join('')}</div>` : ''}
         ${ev.notes ? `<div class="card-notes">${highlight(ev.notes, searchQuery)}</div>` : ''}
       </div>

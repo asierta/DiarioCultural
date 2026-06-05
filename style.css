@@ -173,7 +173,8 @@ main { padding:1.25rem;max-width:900px;margin:0 auto;position:relative; }
 .card-img-placeholder::before { content:'';position:absolute;inset:0;background:linear-gradient(135deg,var(--cat-color) 0%,transparent 80%);opacity:.06; }
 .card-img-emoji { font-size:44px;opacity:.35;user-select:none; }
 .card-body { padding:.65rem .9rem;display:flex;flex-direction:column;gap:4px;flex:1;overflow:hidden;min-height:0; }
-.card-top  { display:flex;justify-content:space-between;align-items:center; }
+.card-top  { display:flex;justify-content:space-between;align-items:center;gap:4px; }
+.series-chip-card { flex:1; min-width:0; max-width:90px; font-size:9px; padding:2px 7px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .cat-label { font-size:17px;line-height:1; }
 .card-actions { display:flex;gap:2px;position:relative;z-index:15;overflow:visible; }
 .card-btn { background:none;border:none;cursor:pointer;padding:4px 5px;border-radius:5px;color:var(--text3);display:flex;align-items:center;justify-content:center;transition:all .15s;line-height:1;position:relative;min-width:24px; }

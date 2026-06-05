@@ -120,6 +120,16 @@
           <button type="button" class="btn-cat-mgr" onclick="openCatManager()" title="Gestionar categorías">⚙️</button>
         </div>
       </div>
+      <div class="form-group">
+        <label>Serie <span style="font-size:9px;color:var(--text3);font-weight:400">(opcional — agrupa eventos relacionados)</span></label>
+        <div class="companions-wrap">
+          <input type="text" id="f-series" placeholder="Ej: Radiohead, Temporada Ópera 24/25…"
+            oninput="onSeriesInput(event)"
+            onkeydown="onSeriesKey(event)"
+            autocomplete="off"/>
+          <div class="companions-suggestions" id="series-suggestions"></div>
+        </div>
+      </div>
     </div>
 
     <!-- ── Step 2: El lugar ── -->

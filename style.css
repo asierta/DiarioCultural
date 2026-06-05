@@ -108,8 +108,32 @@ header { background:rgba(9,8,10,.6);backdrop-filter:blur(24px);-webkit-backdrop-
 .fbar-chip { display:inline-flex;align-items:center;gap:5px;background:rgba(201,148,58,.15);border:1px solid rgba(201,148,58,.4);border-radius:20px;padding:4px 10px;font-size:12px;color:var(--amber-lt);font-family:var(--ui);cursor:pointer;white-space:nowrap;transition:all .15s; }
 .fbar-chip:hover { background:rgba(201,148,58,.25); }
 .fbar-chip.chip-upcoming  { border-color:rgba(114,184,124,.5);color:#9dd4a6;background:rgba(114,184,124,.15); }
-.fbar-chip.chip-hide      { border-color:rgba(180,80,80,.4);color:#f0a0a0;background:rgba(180,80,80,.12); }
 .fbar-chip.chip-companion { border-color:rgba(168,127,212,.45);color:#c9a8e8;background:rgba(168,127,212,.15); }
+.fbar-chip.chip-series { border-color:rgba(94,159,216,.45);color:#8ec5e8;background:rgba(94,159,216,.12); }
+
+/* ── Serie chip en tarjeta y detalle ── */
+.card-series { display:flex; align-items:center; margin-top:1px; }
+.series-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(94,159,216,.1);
+  border: 1px solid rgba(94,159,216,.3);
+  border-radius: 20px;
+  padding: 2px 9px;
+  font-size: 10px;
+  color: #8ec5e8;
+  cursor: pointer;
+  font-family: var(--ui);
+  transition: all .15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.series-chip:hover { background: rgba(94,159,216,.2); border-color: rgba(94,159,216,.55); }
+.series-chip-detail {
+  font-size: 12px;
+  padding: 3px 12px;
+}
 .chip-x { opacity:.65;font-size:10px; }
 .btn-open-filters { display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.05);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:5px 14px;font-size:12px;color:var(--text2);font-family:var(--ui);cursor:pointer;white-space:nowrap;transition:all .18s;flex-shrink:0; }
 .btn-open-filters:hover { border-color:rgba(255,255,255,.22);color:var(--text); }

@@ -72,6 +72,7 @@ function matchesSearch(ev, query) {
 
 let events = [], filterCat = 'Todos', filterYear = 'Todos', filterCompanion = [], sortBy = 'newest';
 let filterUpcoming = false, hideUpcoming = false;
+let filterSeries = null;
 let searchQuery = '', formRating = 0, hoverRating = 0, saving = false, editingId = null;
 let viewMode = localStorage.getItem('viewMode') || 'grid';
 let pendingImageFile = null, existingImageUrl = null, removeExistingImage = false;
@@ -159,6 +160,7 @@ async function saveEvent() {
 
     const eventData = {
       title,
+      series: document.getElementById('f-series')?.value.trim() || null,
       date: document.getElementById('f-date')?.value || null,
       cat: document.getElementById('f-cat')?.value || 'Otro',
       venue: document.getElementById('f-venue')?.value.trim() || null,
@@ -235,6 +237,7 @@ function closeForm() {
   document.getElementById('f-maps-url').value = '';
   document.getElementById('f-notes').value = '';
   document.getElementById('f-companions').value = '';
+  document.getElementById('f-series').value = '';
   document.getElementById('f-price').value = '';
   document.getElementById('f-rating').value = '0';
   document.getElementById('img-thumb-wrap').style.display = 'none';
@@ -441,6 +444,7 @@ function openForm(ev = null) {
     document.getElementById('f-maps-url').value = ev.maps_url || '';
     document.getElementById('f-notes').value = ev.notes || '';
     document.getElementById('f-companions').value = ev.companions || '';
+    document.getElementById('f-series').value = ev.series || '';
     document.getElementById('f-price').value = ev.price || '';
     formRating = ev.rating || 0;
     if (ev.image_url) {
@@ -466,6 +470,7 @@ function toggleNotifications() { openNotifPanel(); }
 
 // ── Filters ───────────────────────────────────────────────────────────────
 function setFilter(c)           { filterCat = c; filterUpcoming = false; renderView(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
+function setSeriesFilter(s)     { filterSeries = filterSeries === s ? null : s; filterUpcoming = false; renderView(); }
 function toggleUpcoming()       { filterUpcoming = !filterUpcoming; if (filterUpcoming) { hideUpcoming = false; filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; } renderView(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
 function toggleHideUpcoming()   { hideUpcoming = !hideUpcoming; if (hideUpcoming) filterUpcoming = false; renderView(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
 function setYear(y)             { filterYear = y; renderView(); if (document.getElementById("filter-panel-overlay")?.classList.contains("open")) renderFilterPanel(); }
@@ -496,12 +501,13 @@ function renderStats() {
 }
 
 function renderFilters() {
-  const activeFilters = [filterCat !== 'Todos', filterYear !== 'Todos', filterCompanion.length > 0, filterUpcoming, hideUpcoming].filter(Boolean);
+  const activeFilters = [filterCat !== 'Todos', filterYear !== 'Todos', filterCompanion.length > 0, filterUpcoming, hideUpcoming, !!filterSeries].filter(Boolean);
   const chips = [];
   if (filterUpcoming) chips.push(`<button class="fbar-chip chip-upcoming" onclick="toggleUpcoming()">🗓 Próximos <span class="chip-x">✕</span></button>`);
   if (hideUpcoming)   chips.push(`<button class="fbar-chip chip-hide" onclick="toggleHideUpcoming()">🙈 Sin futuros <span class="chip-x">✕</span></button>`);
   if (filterCat !== 'Todos') chips.push(`<button class="fbar-chip" onclick="setFilter('Todos')">${CATS[filterCat]?.emoji||''} ${escHtml(filterCat)} <span class="chip-x">✕</span></button>`);
   if (filterYear !== 'Todos') chips.push(`<button class="fbar-chip" onclick="setYear('Todos')">📅 ${filterYear} <span class="chip-x">✕</span></button>`);
+  if (filterSeries) chips.push(`<button class="fbar-chip chip-series" onclick="setSeriesFilter('${filterSeries.replace(/'/g,"\\'")}')">🔗 ${escHtml(filterSeries)} <span class="chip-x">✕</span></button>`);
   filterCompanion.forEach(c => chips.push(`<button class="fbar-chip chip-companion" onclick="setCompanionFilter('${c.replace(/'/g,"\'")}')">👥 ${escHtml(c)} <span class="chip-x">✕</span></button>`));
   const badge = activeFilters.length ? `<span class="fbar-badge">${activeFilters.length}</span>` : '';
   document.getElementById('filters').innerHTML = `
@@ -533,7 +539,7 @@ function renderFilterPanel() {
   document.getElementById('fp-body').innerHTML = upcoming + cats + yrs + comps + sorts;
   document.getElementById('fp-reset').style.display = activeCount > 0 ? 'flex' : 'none';
 }
-function resetAllFilters() { filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; filterUpcoming = false; hideUpcoming = false; renderView(); renderFilterPanel(); }
+function resetAllFilters() { filterCat = 'Todos'; filterYear = 'Todos'; filterCompanion = []; filterUpcoming = false; hideUpcoming = false; filterSeries = null; renderView(); renderFilterPanel(); }
 
 // ── renderGrid ────────────────────────────────────────────────────────────
 // ── MEJORA: Autocompletar compañeros ─────────────────────────────────────
@@ -684,6 +690,60 @@ function pickVenue(venue, city, address, mapsUrl) {
   setTimeout(() => fVenue?.focus(), 10);
 }
 
+// ── Autocompletar series ──────────────────────────────────────────────────
+function getAllSeries() {
+  const map = {};
+  events.forEach(e => {
+    if (!e.series) return;
+    map[e.series] = (map[e.series] || 0) + 1;
+  });
+  return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
+}
+
+function onSeriesInput(e) {
+  const val = e.target.value.trim().toLowerCase();
+  const box = document.getElementById('series-suggestions');
+  if (!box) return;
+  if (!val) { box.innerHTML = ''; box.classList.remove('open'); return; }
+  const matches = getAllSeries().filter(s => s.name.toLowerCase().includes(val)).slice(0, 6);
+  if (!matches.length) { box.innerHTML = ''; box.classList.remove('open'); return; }
+  box.innerHTML = matches.map(s =>
+    `<div class="comp-suggestion" onmousedown="pickSeries('${s.name.replace(/'/g,"\\'")}')">
+      <span>${escHtml(s.name)}</span>
+      <span style="font-size:11px;color:var(--text3);margin-left:auto">${s.count} evento${s.count > 1 ? 's' : ''}</span>
+    </div>`
+  ).join('');
+  box.classList.add('open');
+}
+
+function onSeriesKey(e) {
+  const box = document.getElementById('series-suggestions');
+  if (!box?.classList.contains('open')) return;
+  const items  = box.querySelectorAll('.comp-suggestion');
+  const active = box.querySelector('.comp-suggestion.active');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    const next = active ? active.nextElementSibling : items[0];
+    active?.classList.remove('active'); next?.classList.add('active');
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    const prev = active ? active.previousElementSibling : items[items.length - 1];
+    active?.classList.remove('active'); prev?.classList.add('active');
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    if (active) { e.preventDefault(); pickSeries(active.querySelector('span').textContent); }
+  } else if (e.key === 'Escape') {
+    box.innerHTML = ''; box.classList.remove('open');
+  }
+}
+
+function pickSeries(name) {
+  const input = document.getElementById('f-series');
+  if (input) input.value = name;
+  const box = document.getElementById('series-suggestions');
+  if (box) { box.innerHTML = ''; box.classList.remove('open'); }
+  setTimeout(() => input?.focus(), 10);
+}
+
 // Cerrar sugerencias al hacer clic fuera
 document.addEventListener('click', e => {
   if (!e.target.closest('.companions-wrap')) {
@@ -692,6 +752,10 @@ document.addEventListener('click', e => {
   }
   if (!e.target.closest('.venue-wrap')) {
     const box = document.getElementById('venue-suggestions');
+    if (box) { box.innerHTML = ''; box.classList.remove('open'); }
+  }
+  if (!e.target.closest('#f-series')?.closest('.companions-wrap') && !e.target.closest('[id="series-suggestions"]')) {
+    const box = document.getElementById('series-suggestions');
     if (box) { box.innerHTML = ''; box.classList.remove('open'); }
   }
 });
@@ -712,6 +776,7 @@ function renderGrid() {
     if (filterCat  !== 'Todos') list = list.filter(e => e.cat === filterCat);
     if (filterYear !== 'Todos') list = list.filter(e => e.date?.startsWith(filterYear));
     if (filterCompanion.length) list = list.filter(e => filterCompanion.some(c => getCompanions(e).includes(c)));
+    if (filterSeries) list = list.filter(e => e.series === filterSeries);
   }
   if (searchQuery) {
     list = list.filter(e => matchesSearch(e, searchQuery));
@@ -761,7 +826,8 @@ function renderGrid() {
         ${loc ? `<div class="card-meta">${ev.maps_url ? `<a href="${ev.maps_url}" target="_blank" rel="noopener" class="card-pin-link" onclick="event.stopPropagation()">📍</a>` : '📍'} ${highlight(loc, searchQuery)}</div>` : ''}
         ${ev.date ? `<div class="card-meta">📅 ${fmtDate(ev.date)}</div>` : ''}
         ${stars ? `<div class="card-stars stars-row">${stars}</div>` : ''}
-        ${ev.companions ? `<div class="card-companions">${getCompanions(ev).map(c=>`<span class="companion-tag${filterCompanion.includes(c)?' companion-active':''}" onclick="event.stopPropagation();setCompanionFilter('${c.replace(/'/g, "\\'")}')">${escHtml(c)}</span>`).join('')}</div>` : ''}
+        ${ev.series ? `<div class="card-series"><span class="series-chip" onclick="event.stopPropagation();setSeriesFilter('${ev.series.replace(/'/g,"\\'")}')">🔗 ${escHtml(ev.series)}</span></div>` : ''}
+        ${ev.companions ? `<div class="card-companions">${getCompanions(ev).map(c=>`<span class="companion-tag${filterCompanion.includes(c)?' companion-active':''}" onclick="event.stopPropagation();setCompanionFilter('${c.replace(/'/g, "\\'")}')\">${escHtml(c)}</span>`).join('')}</div>` : ''}
         ${ev.notes ? `<div class="card-notes">${highlight(ev.notes, searchQuery)}</div>` : ''}
       </div>
     </div>`;
@@ -1172,6 +1238,7 @@ let _renderDetailPanel = function(ev) {
         ${ev.date ? `<div class="detail-meta"><span class="dm-icon">📅</span>${fmtDate(ev.date)}</div>` : ''}
         ${loc     ? `<div class="detail-meta"><span class="dm-icon">📍</span>${escHtml(loc)}${ev.maps_url?` <a href="${ev.maps_url}" target="_blank" rel="noopener" class="detail-map-link">Ver en mapa →</a>`:''}</div>` : ''}
         ${ev.companions ? `<div class="detail-meta"><span class="dm-icon">👥</span>${getCompanions(ev).map(c=>`<span class="companion-tag">${escHtml(c)}</span>`).join('')}</div>` : ''}
+        ${ev.series ? `<div class="detail-meta"><span class="dm-icon">🔗</span><span class="series-chip series-chip-detail" onclick="closeDetail();setSeriesFilter('${ev.series.replace(/'/g,"\\'")}')">Serie: ${escHtml(ev.series)}</span></div>` : ''}
         ${ev.price > 0 ? `<div class="detail-meta"><span class="dm-icon">🎟</span><span class="detail-price">${ev.price.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})} €</span></div>` : ''}
       </div>
 

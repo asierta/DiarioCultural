@@ -816,12 +816,6 @@ function renderGrid() {
         <div class="card-top">
           <span class="cat-label">${cat.emoji}</span>
           ${ev.series ? `<span class="series-chip series-chip-card" onclick="event.stopPropagation();setSeriesFilter('${ev.series.replace(/'/g,"\\'")}')">🔗 ${escHtml(ev.series)}</span>` : ''}
-          <div class="card-actions">
-            <button class="card-btn" onclick='event.stopPropagation();openForm(${JSON.stringify(ev).replace(/'/g,"&#39;")})' title="Editar"><span class="btn-icon">✏️</span><span class="btn-lbl">Editar</span></button>
-            <button class="card-btn" onclick="event.stopPropagation();duplicateEvent(${ev.id})" title="Duplicar"><span class="btn-icon">📋</span><span class="btn-lbl">Copiar</span></button>
-            <button class="card-btn" onclick="event.stopPropagation();shareEvent(${ev.id})" title="Compartir"><span class="btn-icon">📤</span><span class="btn-lbl">Enviar</span></button>
-            <button class="card-btn btn-del" onclick="event.stopPropagation();deleteEvent(${ev.id})" title="Eliminar"><span class="btn-icon">✕</span><span class="btn-lbl">Borrar</span></button>
-          </div>
         </div>
         <div class="card-title">${highlight(ev.title, searchQuery)}</div>
         ${loc ? `<div class="card-meta">${ev.maps_url ? `<a href="${ev.maps_url}" target="_blank" rel="noopener" class="card-pin-link" onclick="event.stopPropagation()">📍</a>` : '📍'} ${highlight(loc, searchQuery)}</div>` : ''}

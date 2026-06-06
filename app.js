@@ -484,7 +484,7 @@ function getTopCompanions(limit = 6) {
 
 // ── Render ────────────────────────────────────────────────────────────────
 function render()     { renderStats(); renderFilters(); renderGrid(); renderTodayWidget(); }
-function renderView() { renderFilters(); renderGrid(); }
+function renderView() { syncUrlToState(); renderFilters(); renderGrid(); }
 
 function renderStats() {
   const total = events.length, year = new Date().getFullYear();
@@ -700,6 +700,10 @@ function getAllSeries() {
   return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }));
 }
 
+function getSeriesCount(name) {
+  return events.filter(e => e.series === name).length;
+}
+
 function onSeriesInput(e) {
   const val = e.target.value.trim().toLowerCase();
   const box = document.getElementById('series-suggestions');
@@ -815,7 +819,7 @@ function renderGrid() {
       <div class="card-body">
         <div class="card-top">
           <span class="cat-label">${cat.emoji}</span>
-          ${ev.series ? `<span class="series-chip series-chip-card" onclick="event.stopPropagation();setSeriesFilter('${ev.series.replace(/'/g,"\\'")}')">🔗 ${escHtml(ev.series)}</span>` : ''}
+          ${ev.series ? `<span class="series-chip series-chip-card" onclick="event.stopPropagation();setSeriesFilter('${ev.series.replace(/'/g,"\\'")}')">🔗 ${escHtml(ev.series)}${getSeriesCount(ev.series) > 1 ? ` <span class="series-count">${getSeriesCount(ev.series)}</span>` : ''}</span>` : ''}
         </div>
         <div class="card-title">${highlight(ev.title, searchQuery)}</div>
         ${loc ? `<div class="card-meta">${ev.maps_url ? `<a href="${ev.maps_url}" target="_blank" rel="noopener" class="card-pin-link" onclick="event.stopPropagation()">📍</a>` : '📍'} ${highlight(loc, searchQuery)}</div>` : ''}
@@ -1232,7 +1236,7 @@ let _renderDetailPanel = function(ev) {
         ${ev.date ? `<div class="detail-meta"><span class="dm-icon">📅</span>${fmtDate(ev.date)}</div>` : ''}
         ${loc     ? `<div class="detail-meta"><span class="dm-icon">📍</span>${escHtml(loc)}${ev.maps_url?` <a href="${ev.maps_url}" target="_blank" rel="noopener" class="detail-map-link">Ver en mapa →</a>`:''}</div>` : ''}
         ${ev.companions ? `<div class="detail-meta"><span class="dm-icon">👥</span>${getCompanions(ev).map(c=>`<span class="companion-tag">${escHtml(c)}</span>`).join('')}</div>` : ''}
-        ${ev.series ? `<div class="detail-meta"><span class="dm-icon">🔗</span><span class="series-chip series-chip-detail" onclick="closeDetail();setSeriesFilter('${ev.series.replace(/'/g,"\\'")}')">Serie: ${escHtml(ev.series)}</span></div>` : ''}
+        ${ev.series ? `<div class="detail-meta"><span class="dm-icon">🔗</span><span class="series-chip series-chip-detail" onclick="closeDetail();setSeriesFilter('${ev.series.replace(/'/g,"\\'")}')">Serie: ${escHtml(ev.series)}${getSeriesCount(ev.series) > 1 ? ` <span class="series-count">${getSeriesCount(ev.series)}</span>` : ''}</span></div>` : ''}
         ${ev.price > 0 ? `<div class="detail-meta"><span class="dm-icon">🎟</span><span class="detail-price">${ev.price.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})} €</span></div>` : ''}
       </div>
 
@@ -1963,6 +1967,47 @@ function rotateLoginQuote() {
   el.textContent = LOGIN_QUOTES[Math.floor(Math.random() * LOGIN_QUOTES.length)];
 }
 
+// ── Sincronización URL ↔ filtros ──────────────────────────────────────────
+function syncUrlToState() {
+  const p = new URLSearchParams();
+  if (filterCat !== 'Todos')      p.set('cat', filterCat);
+  if (filterYear !== 'Todos')     p.set('year', filterYear);
+  if (filterSeries)               p.set('series', filterSeries);
+  if (filterCompanion.length)     p.set('with', filterCompanion.join(','));
+  if (filterUpcoming)             p.set('upcoming', '1');
+  if (hideUpcoming)               p.set('hide', '1');
+  if (sortBy !== 'newest')        p.set('sort', sortBy);
+  if (searchQuery)                p.set('q', searchQuery);
+  const str = p.toString();
+  const newUrl = str ? `${location.pathname}?${str}` : location.pathname;
+  if (location.search !== (str ? `?${str}` : '')) {
+    history.pushState(null, '', newUrl);
+  }
+}
+
+function syncStateFromUrl() {
+  const p = new URLSearchParams(location.search);
+  filterCat       = p.get('cat')      || 'Todos';
+  filterYear      = p.get('year')     || 'Todos';
+  filterSeries    = p.get('series')   || null;
+  filterCompanion = p.get('with')     ? p.get('with').split(',').map(s => s.trim()).filter(Boolean) : [];
+  filterUpcoming  = p.get('upcoming') === '1';
+  hideUpcoming    = p.get('hide')     === '1';
+  sortBy          = p.get('sort')     || localStorage.getItem('sortBy') || 'newest';
+  searchQuery     = p.get('q')        || '';
+  // Sincronizar el input de búsqueda con la URL
+  const si = document.getElementById('search-input');
+  if (si) si.value = searchQuery;
+  const sc = document.getElementById('search-clear');
+  if (sc) sc.style.display = searchQuery ? 'block' : 'none';
+}
+
+// Botón atrás/adelante del navegador
+window.addEventListener('popstate', () => {
+  syncStateFromUrl();
+  renderView();
+});
+
 db.auth.getSession().then(({data:{session}})=>{
   if(session) {
     hideLoginScreen();
@@ -1971,6 +2016,7 @@ db.auth.getSession().then(({data:{session}})=>{
   }
   rotateLoginQuote();
 });
+syncStateFromUrl();
 loadEvents();
 window.addEventListener('online',async()=>{isOnline=true;updateOfflineBanner();toast('✓ Conexión restaurada — sincronizando…');await loadEvents();await processSyncQueue();subscribeRealtime();});
 window.addEventListener('offline',()=>{isOnline=false;updateOfflineBanner();unsubscribeRealtime();toast('Sin conexión — modo offline activo',true);});

@@ -1742,3 +1742,44 @@ textarea {
     opacity: 0.7;
   }
 }
+
+/* ── Atajos de teclado ── */
+#shortcuts-help {
+  position: fixed; inset: 0; z-index: 9995;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(10px);
+  animation: fadeIn .2s ease both;
+  cursor: pointer;
+}
+.kbd-panel {
+  background: rgba(14,12,18,.95); backdrop-filter: blur(28px);
+  border: 1px solid rgba(255,255,255,.12); border-radius: var(--r);
+  padding: 1.5rem 2rem; min-width: 280px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.08);
+  animation: sheetUp .25s cubic-bezier(.34,1.56,.64,1) both;
+}
+.kbd-title {
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--text3); font-weight: 500; margin-bottom: 1rem;
+}
+.kbd-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+}
+.kbd-row:last-of-type { border-bottom: none; }
+.kbd-row kbd {
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15);
+  border-radius: 6px; padding: 3px 9px; font-size: 12px; font-weight: 600;
+  color: var(--amber-lt); font-family: var(--ui); white-space: nowrap;
+  min-width: 32px; text-align: center; flex-shrink: 0;
+  box-shadow: 0 2px 0 rgba(0,0,0,.4);
+}
+.kbd-row span { font-size: 13px; color: var(--text2); }
+.kbd-hint {
+  font-size: 11px; color: var(--text3); text-align: center;
+  margin-top: .85rem; font-style: italic;
+}
+.kbd-hint kbd {
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+  border-radius: 4px; padding: 1px 6px; font-size: 10px; color: var(--text3);
+}

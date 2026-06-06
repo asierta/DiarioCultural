@@ -2159,6 +2159,82 @@ window.addEventListener('popstate', () => {
   }
 });
 
+// ── Atajos de teclado ─────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  // Ignorar si el foco está en un input, textarea o select
+  const tag = document.activeElement?.tagName;
+  const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+  // Escape — cerrar cualquier panel abierto (en orden de prioridad)
+  if (e.key === 'Escape') {
+    if (document.getElementById('focus-overlay')?.classList.contains('open'))      { closeFocusPicker(); return; }
+    if (document.getElementById('card-action-sheet')?.classList.contains('open'))  { closeCardActions(); return; }
+    if (document.getElementById('cal-day-overlay')?.classList.contains('open'))    { closeDayDetail(); return; }
+    if (document.getElementById('cat-manager-overlay')?.classList.contains('open')){ closeCatManager(); return; }
+    if (document.getElementById('notif-panel-overlay')?.classList.contains('open')){ closeNotifPanel(); return; }
+    if (document.getElementById('filter-panel-overlay')?.classList.contains('open')){ closeFilterPanel(); return; }
+    if (document.getElementById('stats-overlay')?.classList.contains('open'))      { closeStats(); return; }
+    if (document.getElementById('map-overlay')?.classList.contains('open'))        { closeMap(); return; }
+    if (document.getElementById('detail-overlay')?.classList.contains('open'))     { closeDetail(); return; }
+    if (document.getElementById('overlay')?.classList.contains('open'))            { closeForm(); return; }
+    if (searchQuery) { clearSearch(); return; }
+  }
+
+  // Ignorar el resto si estamos en un input o hay un panel modal abierto
+  if (inInput) return;
+  const anyPanelOpen = ['overlay','detail-overlay','stats-overlay','map-overlay',
+    'filter-panel-overlay','notif-panel-overlay','cat-manager-overlay',
+    'card-action-sheet','wrapped-overlay'].some(
+      id => document.getElementById(id)?.classList.contains('open')
+  );
+  if (anyPanelOpen) return;
+
+  // N — nuevo evento
+  if (e.key === 'n' || e.key === 'N') { e.preventDefault(); openForm(); return; }
+
+  // / — enfocar búsqueda
+  if (e.key === '/') { e.preventDefault(); document.getElementById('search-input')?.focus(); return; }
+
+  // M — abrir mapa
+  if (e.key === 'm' || e.key === 'M') { openMap(); return; }
+
+  // S — abrir estadísticas
+  if (e.key === 's' || e.key === 'S') { openStats(); return; }
+
+  // G — vista grid, L — vista lista, C — vista calendario
+  if (e.key === 'g' || e.key === 'G') { setView('grid'); return; }
+  if (e.key === 'l' || e.key === 'L') { setView('list'); return; }
+  if (e.key === 'c' || e.key === 'C') { setView('calendar'); return; }
+
+  // ? — mostrar ayuda de atajos
+  if (e.key === '?') { showShortcutsHelp(); return; }
+});
+
+function showShortcutsHelp() {
+  const shortcuts = [
+    ['N', 'Nuevo evento'],
+    ['/', 'Buscar'],
+    ['M', 'Mapa de venues'],
+    ['S', 'Estadísticas'],
+    ['G / L / C', 'Vista grid / lista / calendario'],
+    ['Esc', 'Cerrar panel'],
+    ['?', 'Esta ayuda'],
+  ];
+  const rows = shortcuts.map(([k, d]) =>
+    `<div class="kbd-row"><kbd>${k}</kbd><span>${d}</span></div>`
+  ).join('');
+  // Reusar el sistema de toast no es suficiente — usar un mini overlay
+  const existing = document.getElementById('shortcuts-help');
+  if (existing) { existing.remove(); return; }
+  const el = document.createElement('div');
+  el.id = 'shortcuts-help';
+  el.innerHTML = `<div class="kbd-panel"><div class="kbd-title">Atajos de teclado</div>${rows}<div class="kbd-hint">Pulsa <kbd>?</kbd> o <kbd>Esc</kbd> para cerrar</div></div>`;
+  el.onclick = () => el.remove();
+  document.body.appendChild(el);
+  // Auto-cerrar con Escape (ya cubierto arriba) o tras 6s
+  setTimeout(() => el?.remove(), 6000);
+}
+
 db.auth.getSession().then(({data:{session}})=>{
   if(session) {
     hideLoginScreen();

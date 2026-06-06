@@ -1284,6 +1284,38 @@ function openDetail(id) {
   _attachSwipe(document.getElementById('detail-panel'), closeDetail);
 }
 
+// ── Mini mapa estático en el detalle ─────────────────────────────────────
+const MAPS_KEY = 'AIzaSyBA7pJvzaOLhdID8IYgEe_TuSbbNm-3qhg';
+
+function buildDetailMapHtml(ev) {
+  // Necesitamos al menos venue o ciudad para mostrar el mapa
+  if (!ev.venue && !ev.city && !ev.address) return '';
+
+  // Intentar extraer coordenadas del maps_url (@lat,lng)
+  const coordsMatch = ev.maps_url?.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  let center, markerParam;
+  if (coordsMatch) {
+    center      = `${coordsMatch[1]},${coordsMatch[2]}`;
+    markerParam = `markers=color:0xc9943a%7C${coordsMatch[1]},${coordsMatch[2]}`;
+  } else {
+    // Fallback: usar venue + ciudad como texto
+    const query = encodeURIComponent([ev.venue, ev.city, ev.address].filter(Boolean).join(', '));
+    center      = query;
+    markerParam = `markers=color:0xc9943a%7C${query}`;
+  }
+
+  const w = 560, h = 160;
+  const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${center}&zoom=15&size=${w}x${h}&scale=2&${markerParam}&style=element:geometry%7Ccolor:0x0d0c10&style=element:labels.text.fill%7Ccolor:0x4d4850&style=element:labels.text.stroke%7Ccolor:0x0d0c10&style=feature:road%7Celement:geometry%7Ccolor:0x1c1a1f&style=feature:water%7Celement:geometry%7Ccolor:0x060508&style=feature:poi%7Celement:geometry%7Ccolor:0x161419&key=${MAPS_KEY}`;
+
+  const link = ev.maps_url || `https://maps.google.com/maps?q=${encodeURIComponent([ev.venue, ev.city].filter(Boolean).join(', '))}`;
+
+  return `<a href="${link}" target="_blank" rel="noopener" class="detail-map-static-wrap" title="Ver en Google Maps">
+    <img src="${mapUrl}" class="detail-map-static" alt="Mapa de ${escHtml(ev.venue || ev.city)}"
+      onerror="this.closest('.detail-map-static-wrap').style.display='none'"/>
+    <div class="detail-map-static-overlay"><span>🗺 Ver en Google Maps</span></div>
+  </a>`;
+}
+
 let _renderDetailPanel = function(ev) {
   const cat = CATS[ev.cat] || CATS['Otro'];
   const loc = [ev.venue, ev.city].filter(Boolean).join(' · ');
@@ -1323,6 +1355,8 @@ let _renderDetailPanel = function(ev) {
         ${ev.series ? `<div class="detail-meta"><span class="dm-icon">🔗</span><span class="series-chip series-chip-detail" onclick="closeDetail();setSeriesFilter('${ev.series.replace(/'/g,"\\'")}')">Serie: ${escHtml(ev.series)}${getSeriesCount(ev.series) > 1 ? ` <span class="series-count">${getSeriesCount(ev.series)}</span>` : ''}</span></div>` : ''}
         ${ev.price > 0 ? `<div class="detail-meta"><span class="dm-icon">🎟</span><span class="detail-price">${ev.price.toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})} €</span></div>` : ''}
       </div>
+
+      ${buildDetailMapHtml(ev)}
 
       <!-- MEJORA: valoración editable inline -->
       <div class="di-stars-row" title="Toca para valorar">${inlineStars}</div>

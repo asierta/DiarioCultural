@@ -1295,7 +1295,11 @@ function openDetail(id) {
 }
 
 // ── Mini mapa estático en el detalle ─────────────────────────────────────
-const MAPS_KEY = 'AIzaSyBA7pJvzaOLhdID8IYgEe_TuSbbNm-3qhg';
+// Leer la key de Google Maps desde el script tag — así no está duplicada en el código
+const MAPS_KEY = (() => {
+  const src = document.querySelector('script[src*="maps.googleapis.com"]')?.src || '';
+  return new URLSearchParams(src.split('?')[1] || '').get('key') || '';
+})();
 
 function buildDetailMapHtml(ev) {
   // Necesitamos al menos venue o ciudad para mostrar el mapa

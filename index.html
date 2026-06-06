@@ -39,7 +39,7 @@
 
 <!-- Header -->
 <header>
-  <div class="logotype">Diario <em>Cultural</em></div>
+  <div class="logotype" onclick="resetAllFilters();window.scrollTo({top:0,behavior:'smooth'})" style="cursor:pointer" title="Volver al inicio">Diario <em>Cultural</em></div>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
     <input type="text" id="search-input" placeholder="Buscar eventos…" oninput="onSearch(event)" autocomplete="off"/>

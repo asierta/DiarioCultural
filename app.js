@@ -129,6 +129,12 @@ async function loadEvents() {
     if (error) throw error;
     events = data || [];
     render();
+    // Abrir detalle si la URL contiene ?event=ID
+    const eventId = new URLSearchParams(location.search).get('event');
+    if (eventId) {
+      const ev = events.find(e => e.id === parseInt(eventId));
+      if (ev) setTimeout(() => openDetail(ev.id), 150);
+    }
   } catch (err) {
     console.error('loadEvents:', err);
     toast('Error cargando eventos', true);
@@ -1282,6 +1288,10 @@ function openDetail(id) {
   document.getElementById('detail-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
   _attachSwipe(document.getElementById('detail-panel'), closeDetail);
+  // Añadir ?event=ID a la URL sin perder los filtros activos
+  const p = new URLSearchParams(location.search);
+  p.set('event', id);
+  history.pushState(null, '', `${location.pathname}?${p.toString()}`);
 }
 
 // ── Mini mapa estático en el detalle ─────────────────────────────────────
@@ -1485,6 +1495,13 @@ function closeDetail() {
   document.getElementById('detail-overlay').classList.remove('open');
   document.body.style.overflow = '';
   _detailId = null;
+  // Eliminar ?event de la URL
+  const p = new URLSearchParams(location.search);
+  if (p.has('event')) {
+    p.delete('event');
+    const str = p.toString();
+    history.pushState(null, '', str ? `${location.pathname}?${str}` : location.pathname);
+  }
 }
 function detailOverlayClick(e) { if (e.target === document.getElementById('detail-overlay')) closeDetail(); }
 
@@ -2124,6 +2141,18 @@ function syncStateFromUrl() {
 window.addEventListener('popstate', () => {
   syncStateFromUrl();
   renderView();
+  // Gestionar apertura/cierre del detalle
+  const eventId = new URLSearchParams(location.search).get('event');
+  if (eventId) {
+    const ev = events.find(e => e.id === parseInt(eventId));
+    if (ev) openDetail(ev.id);
+  } else {
+    if (document.getElementById('detail-overlay').classList.contains('open')) {
+      document.getElementById('detail-overlay').classList.remove('open');
+      document.body.style.overflow = '';
+      _detailId = null;
+    }
+  }
 });
 
 db.auth.getSession().then(({data:{session}})=>{

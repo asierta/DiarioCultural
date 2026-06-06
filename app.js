@@ -483,7 +483,7 @@ function getTopCompanions(limit = 6) {
 }
 
 // ── Render ────────────────────────────────────────────────────────────────
-function render()     { renderStats(); renderFilters(); renderGrid(); renderTodayWidget(); }
+function render()     { renderStats(); renderFilters(); renderGrid(); renderTodayWidget(); renderMonthWidget(); }
 function renderView() { syncUrlToState(); renderFilters(); renderGrid(); }
 
 function renderStats() {
@@ -980,6 +980,90 @@ function renderTodayWidget() {
 function dismissTodayWidget() {
   const today = new Date().toISOString().slice(0,10); sessionStorage.setItem('tw-dismissed', today);
   const el = document.getElementById('today-widget');
+  if (el) { el.style.animation = 'twCollapse .3s ease forwards'; setTimeout(() => { el.style.display = 'none'; el.style.animation = ''; }, 300); }
+}
+
+// ── Widget "Este mes" ─────────────────────────────────────────────────────
+function getThisMonthEvents() {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yy = String(now.getFullYear());
+  const prefix = `${yy}-${mm}`;
+  return events
+    .filter(e => e.date?.startsWith(prefix))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function renderMonthWidget() {
+  const el = document.getElementById('month-widget'); if (!el) return;
+  const now = new Date();
+  const monthKey = now.toISOString().slice(0, 7); // YYYY-MM
+  if (sessionStorage.getItem('mw-dismissed') === monthKey) { el.style.display = 'none'; return; }
+
+  const all = getThisMonthEvents(); if (!all.length) { el.style.display = 'none'; return; }
+
+  const today = now.toISOString().slice(0, 10);
+  const past    = all.filter(e => e.date < today);
+  const future  = all.filter(e => e.date >= today);
+  const monthFmt = now.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+
+  const makeCard = (ev) => {
+    const cat = CATS[ev.cat] || CATS['Otro'];
+    const loc = [ev.venue, ev.city].filter(Boolean).join(' · ');
+    const imgStyle = ev.image_url
+      ? `background-image:url('${ev.image_url}');background-position:${ev.image_position||'50% 50%'};background-size:cover;`
+      : `background:linear-gradient(135deg,${cat.color}33 0%,transparent 80%);`;
+    const days = daysUntil(ev.date);
+    const cd = days !== null && days >= 0 ? countdownLabel(days) : null;
+    const dayNum = parseInt(ev.date.split('-')[2]);
+    const label = days === null || days < 0
+      ? `Día ${dayNum}`
+      : cd ? cd.text : `Día ${dayNum}`;
+    const labelCls = cd ? cd.cls : 'past';
+    return `<div class="tw-card" onclick="openDetail(${ev.id})" style="--cc:${cat.color}">
+      <div class="tw-card-img" style="${imgStyle}">
+        ${!ev.image_url ? `<span class="tw-card-emoji">${cat.emoji}</span>` : ''}
+        <div class="tw-card-year mw-label ${labelCls}">${label}</div>
+      </div>
+      <div class="tw-card-body">
+        <div class="tw-card-title">${escHtml(ev.title)}</div>
+        ${loc ? `<div class="tw-card-loc">📍 ${escHtml(loc)}</div>` : ''}
+        ${ev.rating ? `<div class="tw-card-stars stars-row">${starsHtml(ev.rating)}</div>` : ''}
+      </div>
+    </div>`;
+  };
+
+  const sections = [];
+  if (future.length) sections.push(`
+    <div class="mw-section">
+      <div class="mw-section-lbl">Próximos · ${future.length}</div>
+      <div class="tw-scroll">${future.map(makeCard).join('')}</div>
+    </div>`);
+  if (past.length) sections.push(`
+    <div class="mw-section">
+      <div class="mw-section-lbl">Ya vividos · ${past.length}</div>
+      <div class="tw-scroll">${past.map(makeCard).join('')}</div>
+    </div>`);
+
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="tw-header">
+      <div class="tw-header-left">
+        <span class="tw-icon">📅</span>
+        <div>
+          <div class="tw-eyebrow">resumen mensual</div>
+          <div class="tw-title">${monthFmt} · <span style="color:var(--amber-lt)">${all.length} evento${all.length > 1 ? 's' : ''}</span></div>
+        </div>
+      </div>
+      <button class="tw-close" onclick="dismissMonthWidget()" title="Cerrar">✕</button>
+    </div>
+    ${sections.join('')}`;
+}
+
+function dismissMonthWidget() {
+  const monthKey = new Date().toISOString().slice(0, 7);
+  sessionStorage.setItem('mw-dismissed', monthKey);
+  const el = document.getElementById('month-widget');
   if (el) { el.style.animation = 'twCollapse .3s ease forwards'; setTimeout(() => { el.style.display = 'none'; el.style.animation = ''; }, 300); }
 }
 
